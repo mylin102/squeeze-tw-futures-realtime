@@ -18,12 +18,29 @@ from squeeze_futures.engine.simulator import PaperTrader
 console = Console()
 
 def is_market_open():
+    """
+    判斷目前是否在台指期交易時段 (日盤 + 夜盤)
+    """
     now = datetime.now()
-    # 簡單判斷：週一至週五 08:45 - 13:45 (不含盤後)
-    if now.weekday() >= 5: return False
-    market_start = now.replace(hour=8, minute=45, second=0)
-    market_end = now.replace(hour=13, minute=45, second=0)
-    return market_start <= now <= market_end
+    weekday = now.weekday() # 0 is Monday, 6 is Sunday
+    
+    # 時間計算用分表示 (更精確)
+    current_time = now.hour * 100 + now.minute
+    
+    # A. 日盤時段: 08:45 - 13:45 (週一至週五)
+    is_day = (0 <= weekday <= 4) and (845 <= current_time < 1345)
+    
+    # B. 夜盤時段: 15:00 - 05:00 (次日)
+    # 週一 15:00 開始到週六 05:00 結束
+    is_night = False
+    # 15:00 之後開始 (週一至週五)
+    if (0 <= weekday <= 4) and (current_time >= 1500):
+        is_night = True
+    # 05:00 之前結束 (週二至週六)
+    if (1 <= weekday <= 5) and (current_time < 500):
+        is_night = True
+        
+    return is_day or is_night
 
 def run_simulation(ticker="MXFR1"):
     trader = PaperTrader(ticker=ticker)
@@ -34,11 +51,17 @@ def run_simulation(ticker="MXFR1"):
     
     try:
         while True:
-            # 盤中交易時間檢查 (可手動註解掉以進行非盤中測試)
-            # if not is_market_open():
-            #     console.print("Market is closed. Waiting...")
-            #     time.sleep(300)
-            #     continue
+            if not is_market_open():
+                # 如果不在交易時段，且有持倉，則強制平倉 (實務上期貨盤中平倉較安全)
+                if trader.position != 0:
+                    # 使用最後紀錄價格平倉
+                    console.print("\n[bold red]Market closed. Forcing exit position...[/bold red]")
+                    # 此處簡化處理，實際建議紀錄最後一筆價格
+                    break
+                
+                console.print(f"[{datetime.now().strftime('%H:%M:%S')}] Market is closed. Resting...", end="\r")
+                time.sleep(300) # 沒開盤時每 5 分鐘檢查一次
+                continue
 
             # 1. 抓取多週期數據
             processed_data = {}
