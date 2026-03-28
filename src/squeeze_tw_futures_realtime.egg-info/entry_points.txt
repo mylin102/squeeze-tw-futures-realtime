@@ -1,0 +1,2 @@
+[console_scripts]
+squeeze-futures = squeeze_futures.cli:app

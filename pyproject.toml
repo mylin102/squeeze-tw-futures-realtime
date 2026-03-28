@@ -2,6 +2,7 @@
 name = "squeeze-tw-futures-realtime"
 version = "0.1.0"
 description = "Real-time Squeeze Momentum strategy for Taiwan Index Futures"
+requires-python = ">=3.12"
 authors = [
     {name = "mylin102"}
 ]
@@ -13,7 +14,8 @@ dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "python-dotenv>=1.0.0",
-    "matplotlib>=3.7.0"
+    "matplotlib>=3.7.0",
+    "shioaji[speed]>=1.3.2",
 ]
 
 [project.scripts]
