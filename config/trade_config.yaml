@@ -1,0 +1,27 @@
+# 🚀 Squeeze Taiwan Futures Auto-Trader Configuration
+
+# 實戰總開關 (DANGER: Set to true only when ready)
+live_trading: false
+
+# 1. 策略核心參數
+strategy:
+  length: 14           # Squeeze 計算週期
+  entry_score: 60      # 進場分數門檻
+  weights:             # 多週期權重 (1h, 15m, 5m)
+    "1h": 0.2
+    "15m": 0.4
+    "5m": 0.4
+
+# 2. 部位管理
+trade_mgmt:
+  lots_per_trade: 1    # 一次進場幾口
+  max_positions: 3     # 總持倉口數上限
+  allow_long: true     # 允許多頭操作
+  allow_short: true    # 允許空頭操作
+  force_close_at_end: true # 每日收盤前是否強制平倉
+
+# 3. 風險控管 (點數皆為台指期點數)
+risk_mgmt:
+  stop_loss_pts: 40    # 硬性停損
+  break_even_pts: 40   # 保本門檻
+  exit_on_vwap: true   # 跌破/漲破成本線即出場

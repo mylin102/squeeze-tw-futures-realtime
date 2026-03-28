@@ -14,3 +14,4 @@ Requires-Dist: python-dotenv>=1.0.0
 Requires-Dist: matplotlib>=3.7.0
 Requires-Dist: shioaji[speed]>=1.3.2
 Requires-Dist: tabulate>=0.10.0
+Requires-Dist: pyyaml>=6.0.3
