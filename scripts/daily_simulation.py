@@ -143,13 +143,14 @@ Current Pos: {"LONG" if trader.position == 1 else "SHORT" if trader.position == 
         console.print("\n[bold red]Simulation ended by user.[/bold red]")
     finally:
         report_content = trader.get_performance_report()
+        report_html = trader.get_performance_report_html()
         report_path = trader.save_report()
         console.print(f"[bold green]Report saved to: {report_path}[/bold green]")
         
         # 發送 Email
         subject = f"Squeeze Simulation Results - {datetime.now().strftime('%Y-%m-%d')}"
-        if send_email_notification(subject, report_content):
-            console.print("[bold cyan]Email notification sent![/bold cyan]")
+        if send_email_notification(subject, report_content, report_html):
+            console.print("[bold cyan]Email notification sent (HTML)![/bold cyan]")
         else:
             console.print("[bold red]Failed to send Email notification.[/bold red]")
 

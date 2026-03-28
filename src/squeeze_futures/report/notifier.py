@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-def send_email_notification(subject: str, body_markdown: str):
+def send_email_notification(subject: str, body_text: str, body_html: str = None):
     """
     發送 Email 通知。
-    設定讀取自 ~/.config/squeeze-backtest-email.env
+    支援純文字 (body_text) 與 HTML (body_html) 格式。
     """
     env_path = os.path.expanduser("~/.config/squeeze-backtest-email.env")
     if not os.path.exists(env_path):
@@ -30,13 +30,17 @@ def send_email_notification(subject: str, body_markdown: str):
         return False
 
     try:
-        msg = MIMEMultipart()
+        msg = MIMEMultipart("alternative")
         msg['From'] = username
         msg['To'] = recipient
         msg['Subject'] = subject
         
-        # 將 Markdown 內容加入 Email (純文字格式)
-        msg.attach(MIMEText(body_markdown, 'plain'))
+        # 加入純文字備案
+        msg.attach(MIMEText(body_text, 'plain'))
+        
+        # 加入 HTML 內文
+        if body_html:
+            msg.attach(MIMEText(body_html, 'html'))
         
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
