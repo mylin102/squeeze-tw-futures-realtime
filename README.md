@@ -1,70 +1,63 @@
-# 🚀 Squeeze Taiwan Index Futures Hybrid System
+# 🚀 Squeeze Taiwan Index Futures Ultimate System
 
-專為台灣指數期貨 (TMF/MX) 打造的專業級自動化交易系統。整合了 **Squeeze 爆發**、**雙向趨勢回測 (Pullback)** 與 **動態環境過濾 (Regime Filter)**，在 60 天回測中展現了極佳的獲利延續性。
-
----
-
-## 🌟 核心進化功能
-
-### 1. 混合進場引擎 (Hybrid Entry)
-- **能量爆發 (Squeeze)**: 監控 TTM Squeeze 釋放，捕捉 V 型轉轉或首波噴發。
-- **趨勢回測 (Pullback)**: 在強勢多/空頭排列中，尋找價格拉回均線支撐/壓力區的二波上車機會。
-
-### 2. 動態環境感知 (Market Regime)
-- **15m EMA 60 過濾**: 系統自動判斷目前處於多頭、空頭或震盪環境。
-- **智慧過濾**: 在多頭環境中自動濾除逆勢空單訊號，顯著提升每一筆交易的成功期望值。
-
-### 3. 全面參數化配置 (YAML Config)
-所有交易邏輯、部位管理與風險控制皆可透過 `config/trade_config.yaml` 輕鬆調整，無需改動程式碼。
+專為台灣指數期貨 (TMF/MX) 打造的專業級自動化交易系統。本系統採用最新的 **Hybrid 進場引擎** 與 **Opening Regime (開盤強弱判定)** 邏輯，經 81 組參數交叉掃描優化，在 60 天回測中展現了極高的獲利穩定性。
 
 ---
 
-## ⚙️ 參數表說明 (config/trade_config.yaml)
+## 🌟 核心戰力
+
+### 1. 智慧環境感知 (Regime Filtering)
+- **15m EMA 60 中線過濾**: 動態判斷波段方向，減少逆勢損耗。
+- **Opening Regime**: 自動偵測每日開盤走勢。強勢日鎖定多單，弱勢日鎖定空單，具備「盤感」的智慧過濾。
+
+### 2. 混合進場引擎 (Hybrid Entry)
+- **Squeeze 爆發**: 捕捉能量釋放後的首波行情。
+- **Trend Pullback**: 在確立趨勢中尋找二波回測支撐/壓力的進場點。
+
+### 3. 科學優化參數
+- **Length 20 / Score 70 / SL 30**: 經大數據測試出的獲利黃金組合。
+- **Swing Mode**: 預設允許留倉（隔日沖），以捕捉最大幅度的跨日噴發行情。
+
+---
+
+## ⚙️ 終極版設定 (config/trade_config.yaml)
 
 ```yaml
 strategy:
-  length: 14           # 指標計算週期
-  entry_score: 70      # 進場分數門檻
+  length: 20           # 最佳化計算週期
+  entry_score: 70      # 嚴格進場門檻
   use_squeeze: true    # 啟動爆發模式
-  use_pullback: true   # 啟動回測模式
-  regime_filter: "mid" # 環境過濾 ("mid": 15m EMA 60, "macro": 1h EMA 200, "none")
-
-  pullback:            # 回測策略專用參數
-    ema_fast: 20       # 短期支撐線
-    ema_slow: 60       # 長期趨勢線
-    lookback: 60       # 創高/低判斷根數
-    buffer: 1.002      # 支撐區彈性係數
+  use_pullback: true   # 啟動趨勢回測
+  regime_filter: "mid" # 使用 15m 中線過濾
 
 trade_mgmt:
-  lots_per_trade: 1    # 交易口數
-  max_positions: 3     # 留倉上限
-  force_close_at_end: true # 收盤清倉
+  lots_per_trade: 1
+  max_positions: 3
+  force_close_at_end: false # 🚀 允許留倉 (Swing Mode)
 
 risk_mgmt:
-  stop_loss_pts: 40    # 硬性停損
-  break_even_pts: 40   # 獲利保本
-  exit_on_vwap: true   # VWAP 結構停損
+  stop_loss_pts: 30    # 最佳化停損點數
+  break_even_pts: 30   # 1:1 保本觸發
+  exit_on_vwap: true   # VWAP 結構停損 (強勢日自動寬限)
 ```
 
 ---
 
-## 📊 績效回測報告 (TMF - 60D)
-透過 `scripts/advanced_backtest.py` 驗證：
-*   **基礎 Squeeze**: +1,820 TWD
-*   **雙向 Hybrid (無過濾)**: +10,110 TWD
-*   **優化 Hybrid (中線過濾)**: **+12,160 TWD (目前預設)**
+## 📊 研究工具箱
+- `scripts/advanced_backtest.py`: 執行三方策略 PK 並產出資產對比圖。
+- `scripts/run_plan_backtest.py`: 產出專業 **HTML 績效分析報告**。
+- `STRATEGY_REPORT.html`: 包含 81 種參數組合的詳細掃描報告。
 
 ---
 
-## 🛠️ 執行與維護
-- **即時交易**: `uv run scripts/daily_simulation.py TMF`
-- **歷史研究**: `uv run scripts/advanced_backtest.py`
-- **資金檢查**: 系統自動實作 **25,000 TWD/口** 的保證金校驗門檻。
+## 🛠️ 執行
+- **啟動交易**: `uv run scripts/daily_simulation.py TMF`
+- **資金檢查**: 下單前自動校驗 **25,000 TWD/口**。
 
 ---
 
 ## ⚠️ 免責聲明
-本系統僅供技術研究，不構成投資建議。實戰交易具備高度風險，請投資人務必確認 `live_trading` 設定。
+本系統僅供技術研究，不構成投資建議。實戰具備高度風險，請投資人務必確認實戰開關 (`live_trading`)。
 
 ## ⚖️ 授權
 MIT License
