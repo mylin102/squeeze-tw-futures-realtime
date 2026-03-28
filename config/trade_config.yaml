@@ -3,15 +3,15 @@
 # 實戰總開關 (DANGER: Set to true only when ready)
 live_trading: false
 
-# 1. 策略核心參數
+# 1. 策略核心參數 (已優化至最佳 20/70 組合)
 strategy:
-  length: 14           # Squeeze 計算週期
+  length: 20           # Squeeze 計算週期 (優化後)
   entry_score: 70      # 進場分數門檻
   
   # 模式開關
   use_squeeze: true    # 能量爆發模式
   use_pullback: true   # 趨勢回測模式
-  regime_filter: "mid" # 環境過濾: "none", "macro" (1h EMA 200), "mid" (15m EMA 60)
+  regime_filter: "mid" # 環境過濾 (15m EMA 60)
   
   # 趨勢回測專用參數 (Pullback Params)
   pullback:
@@ -34,8 +34,8 @@ trade_mgmt:
   allow_short: true
   force_close_at_end: true
 
-# 3. 風險控管
+# 3. 風險控管 (已優化至 30 點 SL)
 risk_mgmt:
-  stop_loss_pts: 40
-  break_even_pts: 40
+  stop_loss_pts: 30    # 硬性停損 (優化後)
+  break_even_pts: 30   # 保本門檻 (優化後)
   exit_on_vwap: true
