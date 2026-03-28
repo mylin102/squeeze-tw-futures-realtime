@@ -117,6 +117,20 @@ def run_simulation(ticker="MXFR1"):
 
             if log_msg:
                 console.print(f"[bold yellow][{timestamp}] {log_msg}[/bold yellow]")
+                
+                # --- 新增：即時成交 Email 通知 ---
+                subject = f"TRADE ALERT: {ticker} - {log_msg.split(' ')[0]}"
+                body = f"""
+Squeeze Strategy Real-time Alert
+--------------------------------
+Event: {log_msg}
+Time: {timestamp}
+Price: {current_price}
+MTF Score: {score:.1f}
+Current Pos: {"LONG" if trader.position == 1 else "SHORT" if trader.position == -1 else "EMPTY"}
+"""
+                send_email_notification(subject, body)
+                # ------------------------------
             
             # 顯示進度
             pos_text = "LONG" if trader.position == 1 else "SHORT" if trader.position == -1 else "EMPTY"
