@@ -13,6 +13,7 @@ from rich.layout import Layout
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from squeeze_futures.data.downloader import download_futures_data
+from squeeze_futures.data.shioaji_client import ShioajiClient
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
 
 console = Console()
@@ -70,17 +71,29 @@ def generate_status_table(ticker: str, data_dict: dict[str, pd.DataFrame]) -> Ta
 def main(ticker="^TWII"):
     layout = make_layout()
     
+    # 初始化 Shioaji
+    shioaji = ShioajiClient()
+    use_shioaji = shioaji.login()
+    
+    status_msg = "[bold green]Mode: SHIOAJI (Real-time)[/bold green]" if use_shioaji else "[bold yellow]Mode: yfinance (Delayed Fallback)[/bold yellow]"
+    console.print(status_msg)
+    
     with Live(layout, refresh_per_second=1) as live:
         while True:
             try:
                 # 1. 抓取多週期數據
                 tfs = ["5m", "15m", "1h"]
-                raw_data = {}
                 processed_data = {}
                 
                 for tf in tfs:
-                    period = "5d" if tf != "1h" else "1mo"
-                    df = download_futures_data(ticker, interval=tf, period=period)
+                    if use_shioaji:
+                        df = shioaji.get_kline(ticker, interval=tf)
+                    
+                    # 如果 Shioaji 失敗或未登入，使用 yfinance 備案
+                    if not use_shioaji or df.empty:
+                        period = "5d" if tf != "1h" else "1mo"
+                        df = download_futures_data(ticker, interval=tf, period=period)
+                        
                     if not df.empty:
                         processed_data[tf] = calculate_futures_squeeze(df)
                 
@@ -88,7 +101,8 @@ def main(ticker="^TWII"):
                 alignment = calculate_mtf_alignment(processed_data)
                 
                 # 3. 更新 UI
-                layout["header"].update(Panel(f"[bold white]Real-time MTF Squeeze: {ticker}[/bold white]", style="on blue"))
+                header_text = f"[bold white]Real-time MTF Squeeze: {ticker}[/bold white] | {status_msg}"
+                layout["header"].update(Panel(header_text, style="on blue"))
                 layout["main"].update(generate_status_table(ticker, processed_data))
                 
                 # Footer: Alignment Score
@@ -105,7 +119,9 @@ def main(ticker="^TWII"):
                 
                 layout["footer"].update(Panel(footer_text, title="Strategy Confluence"))
                 
-                time.sleep(60)
+                # 期貨即時監控建議縮短等待時間，但 yfinance 需保持 60s 避免 rate limit
+                wait_time = 5 if use_shioaji else 60
+                time.sleep(wait_time)
                 
             except KeyboardInterrupt:
                 break
