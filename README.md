@@ -1,79 +1,80 @@
-# 🚀 Squeeze Taiwan Index Futures Real-time Monitor
+# 🚀 Squeeze Taiwan Index Futures Real-time System
 
-專為台灣指數期貨 (Taiwan Index Futures) 設計的實戰即時監控系統。結合了經典的 **TTM Squeeze Momentum** 指標、**MTF 多週期共振** 與 **VWAP 法人平均成本線**，幫助交易者在盤中快速識別高品質的趨勢噴發點。
+專為台灣指數期貨 (Taiwan Index Futures) 打造的專業級實戰監控與模擬交易系統。本系統整合了經典的 **TTM Squeeze Momentum** 策略，並透過 **MTF 多週期共振** 與 **VWAP 法人成本線** 進行多重過濾，旨在捕捉高品質的盤中噴發行情。
 
-## 🌟 功能特色
+---
 
-- **零延遲數據**: 支援 **永豐金 Shioaji API**，提供毫秒級的盤中即時報價。
-- **自動備案機制**: 若 Shioaji 未登入，系統自動切換至 `yfinance` 延遲報價模式。
-- **MTF 多週期共振 (Alignment)**: 同時監控 5m, 15m, 1h 週期，計算綜合趨勢分數 (-100 ~ +100)。
-- **VWAP 偏離度分析**: 即時計算價格相對於當日法人平均成本的位置，有效過濾追高風險。
-- **專業監控看板**: 基於 `Rich` 打造的終端機即時 UI，支援動能顏色辨識與爆發信號閃爍。
-- **高效能處理**: 整合 `shioaji[speed]` 加速數據解析。
+## 🌟 核心功能
 
-## 🛠️ 安裝說明
+### 1. 零延遲數據驅動
+- **Shioaji API 整合**: 直接串接永豐金證券，提供毫秒級的盤中即時報價。
+- **雙模式自動切換**: 若 API 未登入，自動切換至 `yfinance` 備案模式，確保監控不中斷。
 
-本專案使用 `uv` 進行快速、可靠的依賴管理。
+### 2. 專業策略引擎
+- **MTF Alignment**: 同時掃描 5m (極短線)、15m (當沖)、1h (趨勢) 週期，計算 -100 到 +100 的共振分數。
+- **VWAP 偏離過濾**: 即時分析價格與法人平均成本的關係，避免過熱追價。
+- **雙向反手交易**: 支援做多與做空，且能在趨勢轉向時自動執行「平倉並反手」。
+
+### 3. 全自動化通知與報告
+- **即時成交警報**: 每一筆成交（買入、賣出、平倉、反手）都會立即發送 **顏色標註的 HTML Email** 到您的手機。
+- **每日績效總結**: 收盤後自動產出精美的 **HTML 格式績效報告**，包含損益統計與詳細交易日誌。
+- **全自動執行**: 支援 Mac `cron` 排程，實現「日盤+夜盤」全天候無人值守運行。
+
+---
+
+## 🛠️ 快速安裝
+
+本專案使用 `uv` 進行環境管理，安裝極速且穩定。
 
 ```bash
 # 1. 複製專案
 git clone https://github.com/mylin102/squeeze-tw-futures-realtime.git
 cd squeeze-tw-futures-realtime
 
-# 2. 安裝依賴與建立環境
+# 2. 安裝 uv (若尚未安裝)
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 3. 建立虛擬環境與安裝依賴
 uv sync
 ```
 
-## 🔐 配置認證 (.env)
+---
 
-建立 `.env` 檔案並填入您的 API 資訊：
+## 🔐 認證配置 (.env)
+
+請在專案根目錄建立 `.env` 檔案並填入資訊：
 
 ```bash
-# Sinopac Shioaji API
+# 永豐金 Shioaji 帳號資訊
 SHIOAJI_API_KEY=您的身份證字號
-SHIOAJI_SECRET_KEY=您的API密鑰
-SHIOAJI_CERT_PATH=/path/to/your/cert.pfx
-SHIOAJI_CERT_PASSWORD=您的憑證密碼
+SHIOAJI_SECRET_KEY=您的密鑰
+SHIOAJI_CERT_PATH=/路徑/您的憑證.pfx
+SHIOAJI_CERT_PASSWORD=憑證密碼
+
+# Email 通知設定讀取自 ~/.config/squeeze-backtest-email.env
 ```
 
-## 📈 使用教學
+---
 
-### 1. 測試 API 連線
-在正式看盤前，先檢查帳號權限與連線是否正常：
+## 📈 實戰指令
+
+### 啟動即時監控看板
 ```bash
-uv run scripts/test_api.py
+uv run scripts/realtime_monitor.py MXFR1
 ```
 
-### 2. 啟動即時監控
-預設監控台股大盤 (`^TWII`)：
+### 啟動自動模擬交易 (含 Email 通知)
 ```bash
-uv run scripts/realtime_monitor.py
+uv run scripts/daily_simulation.py MXFR1
 ```
 
-監控特定標的（如 0050 或 NQ 期貨）：
-```bash
-uv run scripts/realtime_monitor.py 0050.TW
-uv run scripts/realtime_monitor.py NQ=F
-```
+---
 
-## 🕯️ 交易策略參考
-
-| 信號 / 指標 | 解讀與動作 |
-| :--- | :--- |
-| **Sqz ON (紅色)** | 正在橫盤整理，蓄勢待發。 |
-| **★ FIRED (閃爍)** | Squeeze 剛解除，噴發進場點！ |
-| **Alignment > 60** | 全週期多頭共振，勝率極高。 |
-| **VWAP % > 0** | 價格在法人成本之上，屬於強勢區。 |
-
-## 📁 專案結構
-
-- `src/squeeze_futures/engine/`: 指標計算核心 (Squeeze, MTF, VWAP)。
-- `src/squeeze_futures/data/`: 數據抓取模組 (Shioaji, yfinance)。
-- `scripts/`: 即時監控與測試工具。
+## 📁 文件索引
+- [📋 詳細操作手冊 (OPERATIONS.md)](OPERATIONS.md): 包含 API 測試、策略邏輯說明與全自動化排程設定。
 
 ## ⚠️ 免責聲明
-本專案僅供技術研究與參考，不構成任何投資建議。金融交易具備高度風險，請投資人審慎評估。
+本專案僅供技術研究與模擬交易參考，不構成任何投資建議。金融交易具備高度風險，請投資人審慎評估。
 
 ## ⚖️ 授權
 MIT License
