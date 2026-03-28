@@ -21,10 +21,11 @@ def load_config():
     config_path = Path(__file__).parent.parent / "config" / "trade_config.yaml"
     with open(config_path, 'r') as f: return yaml.safe_load(f)
 
-def execute_engine(p5, p15, p1h, cfg, filter_mode="none"):
+def execute_engine(p5, p15, p1h, cfg, use_mid_f=False, use_open_f=False):
     """
     回測引擎
-    filter_mode: "none", "macro" (1h EMA 200), "mid" (15m EMA 60)
+    use_mid_f: 是否啟動 15m EMA 60 過濾
+    use_open_f: 是否啟動 開盤強弱過濾
     """
     trader = PaperTrader(ticker="TMF", initial_balance=100000)
     equity_curve = []
@@ -34,29 +35,35 @@ def execute_engine(p5, p15, p1h, cfg, filter_mode="none"):
     
     for i in range(len(p5)):
         curr_time = p5.index[i]
-        row, row_15m, row_1h = p5.iloc[i], p15[p15.index <= curr_time].iloc[-1], p1h[p1h.index <= curr_time].iloc[-1]
+        row, row_15m = p5.iloc[i], p15[p15.index <= curr_time].iloc[-1]
         price, vwap = row['Close'], row['vwap']
         
+        # --- 1. 風控 ---
         if trader.position != 0:
             trader.update_trailing_stop(price)
             if not trader.check_stop_loss(price, curr_time):
+                # 加入開盤法對 VWAP 停損的放寬邏輯
+                opening_strong = row['opening_bullish']
+                opening_weak = row['opening_bearish']
                 if RISK['exit_on_vwap']:
-                    if (trader.position > 0 and price < vwap) or (trader.position < 0 and price > vwap):
+                    if (trader.position > 0 and price < vwap and not (use_open_f and opening_strong)) or \
+                       (trader.position < 0 and price > vwap and not (use_open_f and opening_weak)):
                         trader.execute_signal("EXIT", price, curr_time)
         
+        # --- 2. 進場判定 ---
         alignment = calculate_mtf_alignment({"5m": p5.iloc[:i+1], "15m": p15[p15.index <= curr_time], "1h": p1h[p1h.index <= curr_time]}, weights=STRAT['weights'])
         score = alignment['score']
         
-        # --- 環境過濾 ---
+        # 環境過濾
         can_long, can_short = True, True
-        if filter_mode == "macro":
-            macro_trend = "BULL" if row_1h['Close'] > row_1h['ema_macro'] else "BEAR"
-            is_sideways = abs(row_1h['Close'] - row_1h['ema_macro']) / row_1h['ema_macro'] < 0.005
-            can_long, can_short = (macro_trend == "BULL" or is_sideways), (macro_trend == "BEAR" or is_sideways)
-        elif filter_mode == "mid":
+        if use_mid_f:
             mid_trend = "BULL" if row_15m['Close'] > row_15m['ema_filter'] else "BEAR"
             is_sideways = abs(row_15m['Close'] - row_15m['ema_filter']) / row_15m['ema_filter'] < 0.003
             can_long, can_short = (mid_trend == "BULL" or is_sideways), (mid_trend == "BEAR" or is_sideways)
+        
+        if use_open_f:
+            if row['opening_bullish']: can_short = False
+            if row['opening_bearish']: can_long = False
 
         if trader.position == 0:
             sqz_buy = (not row['sqz_on']) and score >= STRAT['entry_score'] and price > vwap and row['mom_state'] == 3
@@ -75,45 +82,47 @@ def execute_engine(p5, p15, p1h, cfg, filter_mode="none"):
         elif trader.position < 0 and (row['mom_state'] > 1 or score > -20):
             trader.execute_signal("EXIT", price, curr_time)
 
-        equity_curve.append(trader.balance + ((price - trader.entry_price) * trader.position * 10 if trader.position != 0 else 0))
+        cur_eq = trader.balance + ((price - trader.entry_price) * trader.position * 10 if trader.position != 0 else 0)
+        equity_curve.append(cur_eq)
         
     return equity_curve, trader
 
-def run_triple_pk():
+def run_ultimate_pk():
     cfg = load_config()
-    console.print(f"[bold cyan]📊 Running Triple Regime Filter PK (None vs Macro vs Mid)...[/bold cyan]")
+    console.print(f"[bold cyan]📊 Running Ultimate Evolution PK (None vs Mid vs Mid+Open)...[/bold cyan]")
     
     files = sorted(Path("data/taifex_raw").glob("Daily_*.rpt"))
-    all_5m, all_15m, all_1h = [], [], []
+    all_d, all_d15, all_d1h = [], [], []
     for f in files:
         d5 = load_and_resample(f, "5min", "TMF"); d15 = load_and_resample(f, "15min", "TMF"); d1h = load_and_resample(f, "1h", "TMF")
-        if d5 is not None: all_5m.append(d5); all_15m.append(d15); all_1h.append(d1h)
+        if d5 is not None: all_d.append(d5); all_d15.append(d15); all_d1h.append(d1h)
     
     pb_cfg = cfg['strategy']['pullback']
     common_args = {'bb_length': cfg['strategy']['length'], 'ema_fast': pb_cfg['ema_fast'], 'ema_slow': pb_cfg['ema_slow'], 'lookback': pb_cfg['lookback'], 'pb_buffer': pb_cfg['buffer']}
     
-    p5 = calculate_futures_squeeze(pd.concat(all_5m).sort_index(), **common_args)
-    p15 = calculate_futures_squeeze(pd.concat(all_15m).sort_index(), **common_args)
-    p1h = calculate_futures_squeeze(pd.concat(all_1h).sort_index(), **common_args)
+    p5 = calculate_futures_squeeze(pd.concat(all_d).sort_index(), **common_args)
+    p15 = calculate_futures_squeeze(pd.concat(all_d15).sort_index(), **common_args)
+    p1h = calculate_futures_squeeze(pd.concat(all_d1h).sort_index(), **common_args)
 
+    modes = [("Basic Hybrid", False, False), ("Mid Filter", True, False), ("🚀 Mid + Open Filter", True, True)]
     results = []
-    for mode in ["none", "macro", "mid"]:
-        console.print(f"Testing Filter: {mode}...")
-        eq, trader = execute_engine(p5, p15, p1h, cfg, filter_mode=mode)
-        results.append((mode, eq, trader))
+    for name, mid, op in modes:
+        console.print(f"Testing: {name}...")
+        eq, t = execute_engine(p5, p15, p1h, cfg, use_mid_f=mid, use_open_f=op)
+        results.append((name, eq, t))
 
-    table = Table(title="🏆 Triple Regime Filter PK Results")
-    table.add_column("Filter Mode", style="cyan"); table.add_column("Net Profit", justify="right", style="bold"); table.add_column("Trades", justify="center")
-    for mode, eq, trader in results:
-        table.add_row(mode, f"{trader.balance-100000:+.0f}", str(len(trader.trades)))
+    table = Table(title="🏆 Ultimate Strategy PK Results")
+    table.add_column("Strategy", style="cyan"); table.add_column("Net Profit", justify="right", style="bold"); table.add_column("Trades", justify="center")
+    for name, eq, t in results:
+        table.add_row(name, f"{t.balance-100000:+.0f}", str(len(t.trades)))
     console.print(table)
 
     plt.style.use('dark_background'); fig, ax = plt.subplots(figsize=(15, 8))
-    colors = {'none': '#FF00FF', 'macro': '#00CCFF', 'mid': '#00FF00'}
-    for mode, eq, _ in results:
-        ax.plot(p5.index, eq, color=colors[mode], label=f'Filter: {mode}', linewidth=2 if mode == 'mid' else 1.5)
-    ax.axhline(100000, color='white', linestyle=':', alpha=0.5); ax.set_title("Equity PK: No Filter vs. Macro (1h) vs. Mid (15m)"); ax.legend(); plt.tight_layout()
-    plt.savefig("exports/simulations/triple_filter_pk.png"); os.system("open exports/simulations/triple_filter_pk.png")
+    clrs = ['#FF00FF', '#00CCFF', '#00FF00']
+    for i, (name, eq, _) in enumerate(results):
+        ax.plot(p5.index, eq, color=clrs[i], label=name, linewidth=2 if i==2 else 1.5)
+    ax.axhline(100000, color='white', linestyle=':', alpha=0.5); ax.set_title("Strategy Evolution: Impact of Opening Regime Filter"); ax.legend(); plt.tight_layout()
+    plt.savefig("exports/simulations/ultimate_pk.png"); os.system("open exports/simulations/ultimate_pk.png")
 
 if __name__ == "__main__":
-    run_triple_pk()
+    run_ultimate_pk()
