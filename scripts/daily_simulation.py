@@ -46,13 +46,15 @@ def get_market_status():
 def run_simulation(ticker="TMF"):
     cfg = load_config()
     LIVE_TRADING, STRATEGY, MGMT, RISK = cfg['live_trading'], cfg['strategy'], cfg['trade_mgmt'], cfg['risk_mgmt']
+    PB = STRATEGY.get('pullback', {})
+    FILTER_MODE = STRATEGY.get('regime_filter', 'mid')
 
     trader = PaperTrader(ticker=ticker)
     shioaji = ShioajiClient()
     use_shioaji = shioaji.login()
     contract = shioaji.get_futures_contract(ticker) if use_shioaji else None
     
-    console.print(f"🚀 Squeeze Trader Started - Mode: {'LIVE' if LIVE_TRADING else 'PAPER'}")
+    console.print(f"🚀 Squeeze Trader Started - Mode: {'LIVE' if LIVE_TRADING else 'PAPER'} | Filter: {FILTER_MODE}")
 
     try:
         while True:
@@ -61,20 +63,36 @@ def run_simulation(ticker="TMF"):
                 if trader.position != 0: trader.execute_signal("EXIT", trader.entry_price, datetime.now())
                 time.sleep(300); continue
 
-            # 1. 抓取數據
             processed_data = {}
             for tf in ["5m", "15m", "1h"]:
                 df = shioaji.get_kline(ticker, interval=tf) if use_shioaji else pd.DataFrame()
                 if df.empty: df = download_futures_data("^TWII", interval=tf, period="5d")
-                if not df.empty: processed_data[tf] = calculate_futures_squeeze(df, bb_length=STRATEGY["length"])
+                if not df.empty:
+                    processed_data[tf] = calculate_futures_squeeze(df, bb_length=STRATEGY["length"], **PB)
             
-            if "5m" not in processed_data: continue
-            df_5m = processed_data["5m"]
-            last_5m = df_5m.iloc[-1]
+            if "5m" not in processed_data or "15m" not in processed_data or "1h" not in processed_data: continue
+            df_5m, df_15m, df_1h = processed_data["5m"], processed_data["15m"], processed_data["1h"]
+            last_5m, last_15m, last_1h = df_5m.iloc[-1], df_15m.iloc[-1], df_1h.iloc[-1]
+            
             alignment = calculate_mtf_alignment(processed_data, weights=STRATEGY["weights"])
             score, last_price, vwap = alignment['score'], last_5m['Close'], last_5m['vwap']
             timestamp = last_5m.name if hasattr(last_5m, 'name') else datetime.now()
             
+            # --- 🚀 市場環境過濾 (Regime Filter) ---
+            can_long, can_short = True, True
+            regime_desc = "NONE"
+            
+            if FILTER_MODE == "macro":
+                macro_trend = "BULL" if last_1h['Close'] > last_1h['ema_macro'] else "BEAR"
+                is_sideways = abs(last_1h['Close'] - last_1h['ema_macro']) / last_1h['ema_macro'] < 0.005
+                can_long, can_short = (macro_trend == "BULL" or is_sideways), (macro_trend == "BEAR" or is_sideways)
+                regime_desc = f"MACRO:{macro_trend}"
+            elif FILTER_MODE == "mid":
+                mid_trend = "BULL" if last_15m['Close'] > last_15m['ema_filter'] else "BEAR"
+                is_sideways = abs(last_15m['Close'] - last_15m['ema_filter']) / last_15m['ema_filter'] < 0.003
+                can_long, can_short = (mid_trend == "BULL" or is_sideways), (mid_trend == "BEAR" or is_sideways)
+                regime_desc = f"MID:{mid_trend}"
+
             log_msg, real_action = "", None
             
             # --- 2. 風控監控 ---
@@ -90,38 +108,30 @@ def run_simulation(ticker="TMF"):
 
             # --- 3. 進場邏輯 ---
             if not log_msg and trader.position == 0:
-                # 模式 A: Squeeze 爆發
                 sqz_buy = STRATEGY.get('use_squeeze', True) and (not last_5m['sqz_on']) and score >= STRATEGY["entry_score"] and last_price > vwap and last_5m['mom_state'] == 3
                 sqz_sell = STRATEGY.get('use_squeeze', True) and (not last_5m['sqz_on']) and score <= -STRATEGY["entry_score"] and last_price < vwap and last_5m['mom_state'] == 0
-                
-                # 模式 B: 趨勢回測 (僅多單)
-                pb_buy = False
+                pb_buy, pb_sell = False, False
                 if STRATEGY.get('use_pullback', False):
-                    # 條件：多頭排列 + 進入拉回區 + 守住支撐 (收紅) + 近期曾創高
-                    had_recent_high = df_5m['is_new_high'].tail(15).any()
-                    is_pullback = last_5m['in_pullback_zone'] and last_5m['Close'] > last_5m['Open']
-                    if had_recent_high and is_pullback and last_5m['bullish_align']:
-                        pb_buy = True
-                        console.print(f"[cyan][{timestamp}] Trend Pullback Signal Detected![/cyan]")
+                    lb = PB.get('lookback', 60) // 5
+                    if df_5m['is_new_high'].tail(lb).any() and last_5m['in_bull_pb_zone'] and last_price > last_5m['Open'] and last_5m['bullish_align']: pb_buy = True
+                    if df_5m['is_new_low'].tail(lb).any() and last_5m['in_bear_pb_zone'] and last_price < last_5m['Open'] and last_5m['bearish_align']: pb_sell = True
 
-                if (sqz_buy or pb_buy) and MGMT["allow_long"]:
+                if (sqz_buy or pb_buy) and can_long and MGMT["allow_long"]:
                     if not LIVE_TRADING or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
-                        reason = "Squeeze" if sqz_buy else "Pullback"
                         log_msg = trader.execute_signal("BUY", last_price, timestamp, lots=MGMT["lots_per_trade"], max_lots=MGMT["max_positions"], stop_loss=RISK["stop_loss_pts"], break_even_trigger=RISK["break_even_pts"])
-                        log_msg = f"[{reason}] " + log_msg
-                        real_action = "Buy"
-                elif sqz_sell and MGMT["allow_short"]:
+                        log_msg = f"[{'Sqz' if sqz_buy else 'PB'}] " + log_msg; real_action = "Buy"
+                elif (sqz_sell or pb_sell) and can_short and MGMT["allow_short"]:
                     if not LIVE_TRADING or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
                         log_msg = trader.execute_signal("SELL", last_price, timestamp, lots=MGMT["lots_per_trade"], max_lots=MGMT["max_positions"], stop_loss=RISK["stop_loss_pts"], break_even_trigger=RISK["break_even_pts"])
-                        log_msg = "[Squeeze] " + log_msg
-                        real_action = "Sell"
+                        log_msg = f"[{'Sqz' if sqz_sell else 'PB'}] " + log_msg; real_action = "Sell"
 
-            # --- 4. 執行與通知 ---
             if log_msg:
                 console.print(f"[bold yellow][{timestamp}] {log_msg}[/bold yellow]")
                 if LIVE_TRADING and real_action and contract: shioaji.place_order(contract, real_action, MGMT["lots_per_trade"])
-                send_email_notification(f"{'REAL' if LIVE_TRADING else 'PAPER'} TRADE", log_msg, f"<h3>{log_msg}</h3>")
+                send_email_notification(f"TRADE ALERT: {ticker}", log_msg, f"<h3>{log_msg}</h3>")
             
+            # 即時顯示包含環境狀態
+            console.print(f"[{datetime.now().strftime('%H:%M:%S')}] Price: {last_price:.1f} | Score: {score:.1f} | Regime: {regime_desc} | Pos: {trader.position}", end="\r")
             time.sleep(30 if use_shioaji else 60)
 
     except KeyboardInterrupt: pass

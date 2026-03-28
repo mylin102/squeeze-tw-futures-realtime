@@ -6,24 +6,36 @@ live_trading: false
 # 1. 策略核心參數
 strategy:
   length: 14           # Squeeze 計算週期
-  entry_score: 70      # 進場分數門檻 (已優化至 70)
-  use_squeeze: true    # 是否使用 Squeeze 爆發模式
-  use_pullback: true   # 是否使用趨勢回測模式 (EMA 排列 + 創高拉回)
-  weights:             # 多週期權重 (1h, 15m, 5m)
+  entry_score: 70      # 進場分數門檻
+  
+  # 模式開關
+  use_squeeze: true    # 能量爆發模式
+  use_pullback: true   # 趨勢回測模式
+  regime_filter: "mid" # 環境過濾: "none", "macro" (1h EMA 200), "mid" (15m EMA 60)
+  
+  # 趨勢回測專用參數 (Pullback Params)
+  pullback:
+    ema_fast: 20       # 短期支撐均線
+    ema_slow: 60       # 長期趨勢均線
+    lookback: 60       # 創近期新高的回溯根數
+    buffer: 1.002      # 支撐區上方寬鬆度 (0.2%)
+
+  # 多週期權重
+  weights:
     "1h": 0.2
     "15m": 0.4
     "5m": 0.4
 
 # 2. 部位管理
 trade_mgmt:
-  lots_per_trade: 1    # 一次進場幾口
-  max_positions: 3     # 總持倉口數上限
-  allow_long: true     # 允許多頭操作
-  allow_short: true    # 允許空頭操作
-  force_close_at_end: true # 每日收盤前是否強制平倉
+  lots_per_trade: 1
+  max_positions: 3
+  allow_long: true
+  allow_short: true
+  force_close_at_end: true
 
-# 3. 風險控管 (點數皆為台指期點數)
+# 3. 風險控管
 risk_mgmt:
-  stop_loss_pts: 40    # 硬性停損
-  break_even_pts: 40   # 保本門檻
-  exit_on_vwap: true   # 跌破/漲破成本線即出場
+  stop_loss_pts: 40
+  break_even_pts: 40
+  exit_on_vwap: true
