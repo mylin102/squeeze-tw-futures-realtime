@@ -60,22 +60,35 @@ def run_simulation(ticker="MXFR1"):
             current_price = last_5m['Close']
             timestamp = last_5m.name if hasattr(last_5m, 'name') else datetime.now()
             
-            log_msg = None
+            log_msg = ""
             
-            # 進場邏輯
+            # --- 核心交易邏輯 (含反手交易) ---
+            
+            # 情況 A: 目前空手 (Empty)
             if trader.position == 0:
                 if last_5m['fired'] and score > 70 and last_5m['price_vs_vwap'] > 0:
                     log_msg = trader.execute_signal("BUY", current_price, timestamp)
                 elif last_5m['fired'] and score < -70 and last_5m['price_vs_vwap'] < 0:
                     log_msg = trader.execute_signal("SELL", current_price, timestamp)
             
-            # 出場邏輯
-            elif trader.position == 1: # 持有多單
-                # 動能轉弱 (State 3 -> 2) 或 分數轉向
-                if last_5m['mom_state'] < 3 or score < 20:
+            # 情況 B: 持有多單 (Long)
+            elif trader.position == 1:
+                # 偵測到強勢反向信號 (反手條件)
+                if last_5m['fired'] and score < -70:
                     log_msg = trader.execute_signal("EXIT", current_price, timestamp)
-            elif trader.position == -1: # 持有空單
-                if last_5m['mom_state'] > 0 or score > -20:
+                    log_msg += " | " + trader.execute_signal("SELL", current_price, timestamp)
+                # 一般出場條件 (動能轉弱或分數轉向)
+                elif last_5m['mom_state'] < 3 or score < 20:
+                    log_msg = trader.execute_signal("EXIT", current_price, timestamp)
+            
+            # 情況 C: 持有空單 (Short)
+            elif trader.position == -1:
+                # 偵測到強勢反向信號 (反手條件)
+                if last_5m['fired'] and score > 70:
+                    log_msg = trader.execute_signal("EXIT", current_price, timestamp)
+                    log_msg += " | " + trader.execute_signal("BUY", current_price, timestamp)
+                # 一般出場條件 (動能轉弱或分數轉向)
+                elif last_5m['mom_state'] > 0 or score > -20:
                     log_msg = trader.execute_signal("EXIT", current_price, timestamp)
 
             if log_msg:
