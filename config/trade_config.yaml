@@ -1,26 +1,28 @@
 # 🚀 Squeeze Taiwan Futures Auto-Trader Configuration
 
-# 實戰總開關 (DANGER: Set to true only when ready)
+# 實戰總開關
 live_trading: false
 
-# 1. 策略核心參數 (已優化至最佳 20/70 組合)
+# 1. 策略核心參數
 strategy:
-  length: 20           # Squeeze 計算週期
-  entry_score: 70      # 進場分數門檻
+  length: 20
+  entry_score: 70
+  use_squeeze: true
+  use_pullback: true
+  regime_filter: "mid"
   
-  # 模式開關
-  use_squeeze: true    # 能量爆發模式
-  use_pullback: true   # 趨勢回測模式
-  regime_filter: "mid" # 環境過濾 (15m EMA 60)
-  
-  # 趨勢回測專用參數 (Pullback Params)
   pullback:
-    ema_fast: 20       # 短期支撐均線
-    ema_slow: 60       # 長期趨勢均線
-    lookback: 60       # 創近期新高的回溯根數
-    buffer: 1.002      # 支撐區上方寬鬆度 (0.2%)
+    ema_fast: 20
+    ema_slow: 60
+    lookback: 60
+    buffer: 1.002
 
-  # 多週期權重
+  # 🚀 新增：分批停利策略 (Partial Exit)
+  partial_exit:
+    enabled: true      # 是否啟動分批停利
+    tp1_pts: 40        # 第一階段停利點數 (40 點)
+    tp1_lots: 1        # 第一階段平倉口數
+
   weights:
     "1h": 0.2
     "15m": 0.4
@@ -28,11 +30,11 @@ strategy:
 
 # 2. 部位管理
 trade_mgmt:
-  lots_per_trade: 1
-  max_positions: 3
+  lots_per_trade: 2    # 進場直接 2 口
+  max_positions: 2
   allow_long: true
   allow_short: true
-  force_close_at_end: false # 🚀 設為 false 以允許留倉 (獲利期望值更高)
+  force_close_at_end: false
 
 # 3. 風險控管
 risk_mgmt:
