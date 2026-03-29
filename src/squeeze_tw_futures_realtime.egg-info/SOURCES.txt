@@ -1,7 +1,10 @@
 README.md
 pyproject.toml
+src/squeeze_futures/cli.py
 src/squeeze_futures/data/downloader.py
 src/squeeze_futures/data/shioaji_client.py
+src/squeeze_futures/engine/constants.py
+src/squeeze_futures/engine/execution.py
 src/squeeze_futures/engine/indicators.py
 src/squeeze_futures/engine/simulator.py
 src/squeeze_futures/report/notifier.py
@@ -11,3 +14,7 @@ src/squeeze_tw_futures_realtime.egg-info/dependency_links.txt
 src/squeeze_tw_futures_realtime.egg-info/entry_points.txt
 src/squeeze_tw_futures_realtime.egg-info/requires.txt
 src/squeeze_tw_futures_realtime.egg-info/top_level.txt
+tests/test_execution.py
+tests/test_indicators.py
+tests/test_shioaji_client.py
+tests/test_simulator.py

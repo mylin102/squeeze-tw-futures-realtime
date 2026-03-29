@@ -1,8 +1,19 @@
 import pandas as pd
 from datetime import datetime
 import os
+from typing import Optional, List, Dict
+
 
 class PaperTrader:
+    """
+    模擬交易器，支援 SQLite 持久化
+    
+    功能:
+    - 記憶體交易記錄 (trades list)
+    - SQLite 持久化 (可選)
+    - 權益曲線快照 (可選)
+    """
+    
     def __init__(
         self,
         ticker="TMF",
@@ -11,10 +22,12 @@ class PaperTrader:
         fee_per_side=20,
         exchange_fee_per_side=0,
         tax_rate=0.0,
+        db_path: Optional[str] = None,
+        snapshot_interval: int = 1800,  # 30 分鐘
     ):
         self.ticker = ticker
         self.balance = initial_balance
-        self.position = 0  
+        self.position = 0
         self.entry_price = 0
         self.entry_time = None
         self.trades = []
@@ -25,6 +38,118 @@ class PaperTrader:
         self.current_stop_loss = None
         self.be_triggered = False
         self.be_points = None
+        
+        # SQLite 持久化
+        self.db = None
+        self.snapshot_interval = snapshot_interval
+        self._last_snapshot_time = None
+        self._entry_score = None  # 記錄進場時的 MTF score
+        
+        if db_path:
+            self._init_persistence(db_path)
+    
+    def _init_persistence(self, db_path: str):
+        """初始化 SQLite 持久化"""
+        from squeeze_futures.database.db_manager import DatabaseManager
+        self.db = DatabaseManager(db_path)
+        self.db.log_system_event(
+            level='INFO',
+            module='PaperTrader',
+            message=f'Trader initialized with db={db_path}',
+            details=f'ticker={self.ticker}, initial_balance={self.balance}'
+        )
+    
+    def _record_trade_to_db(self, trade: Dict):
+        """將交易記錄寫入資料庫"""
+        if self.db is None:
+            return
+        
+        try:
+            # ENTRY 記錄
+            if trade['type'] == 'ENTRY':
+                self.db.record_trade({
+                    'ticker': trade['ticker'],
+                    'direction': trade['direction'],
+                    'type': 'ENTRY',
+                    'entry_time': trade['entry_time'],
+                    'entry_price': trade['entry_price'],
+                    'lots': trade['lots'],
+                    'pnl_cash': 0,  # ENTRY 時 PnL 為 0
+                    'entry_score': self._entry_score,
+                })
+            # EXIT / PARTIAL_EXIT 記錄
+            else:
+                self.db.record_trade({
+                    'ticker': trade['ticker'],
+                    'direction': trade['direction'],
+                    'type': trade['type'],
+                    'entry_time': trade['entry_time'],
+                    'exit_time': trade['exit_time'],
+                    'entry_price': trade['entry_price'],
+                    'exit_price': trade['exit_price'],
+                    'lots': trade['lots'],
+                    'pnl_points': trade['pnl_points'],
+                    'gross_pnl_cash': trade['gross_pnl_cash'],
+                    'broker_fee': trade['broker_fee'],
+                    'exchange_fee': trade['exchange_fee'],
+                    'tax_cost': trade['tax_cost'],
+                    'total_cost': trade['total_cost'],
+                    'pnl_cash': trade['pnl_cash'],
+                    'exit_reason': trade.get('exit_reason'),
+                })
+        except Exception as e:
+            if self.db:
+                self.db.log_system_event(
+                    level='ERROR',
+                    module='PaperTrader',
+                    message=f'Failed to record trade: {str(e)}',
+                    details=str(trade)
+                )
+    
+    def _maybe_save_snapshot(self, current_time: datetime, price: float):
+        """定期儲存權益快照"""
+        if self.db is None:
+            return
+        
+        # 檢查是否達到快照間隔
+        if self._last_snapshot_time is None:
+            self._last_snapshot_time = current_time
+            return
+        
+        elapsed = (current_time - self._last_snapshot_time).total_seconds()
+        if elapsed >= self.snapshot_interval:
+            unrealized_pnl = 0
+            if self.position != 0:
+                unrealized_pnl = (price - self.entry_price) * self.position * self.point_value
+            
+            total_equity = self.balance + unrealized_pnl
+            
+            self.db.save_equity_snapshot(
+                timestamp=current_time,
+                balance=self.balance,
+                position=self.position,
+                unrealized_pnl=unrealized_pnl,
+                total_equity=total_equity,
+                market_price=price
+            )
+            self._last_snapshot_time = current_time
+    
+    def get_db_trade_history(self) -> pd.DataFrame:
+        """從資料庫取得交易歷史"""
+        if self.db is None:
+            return pd.DataFrame()
+        
+        trades = self.db.get_trade_history()
+        if not trades:
+            return pd.DataFrame()
+        
+        return pd.DataFrame(trades)
+    
+    def get_db_performance_summary(self, start_date: str = None, end_date: str = None) -> Dict:
+        """從資料庫取得績效摘要"""
+        if self.db is None:
+            return {}
+        return self.db.get_performance_summary(start_date, end_date)
 
     def execute_signal(self, signal: str, price: float, timestamp: datetime, lots=1, max_lots=1, stop_loss=None, break_even_trigger=None):
         if signal == "BUY":
@@ -37,8 +162,17 @@ class PaperTrader:
                 else:
                     self.entry_price = ((self.entry_price * self.position) + (price * lots)) / (self.position + lots)
                 self.position += lots
+                
+                # 記錄 ENTRY 到資料庫
+                if self.db:
+                    trade_record = {
+                        'ticker': self.ticker, 'direction': 'LONG', 'type': 'ENTRY',
+                        'entry_time': timestamp, 'entry_price': price, 'lots': lots,
+                    }
+                    self._record_trade_to_db(trade_record)
+                
                 return f"Entry LONG {lots} at {price}"
-            
+
         elif signal == "SELL":
             if abs(self.position) < max_lots:
                 if self.position > 0: self.execute_signal("EXIT", price, timestamp)
@@ -49,35 +183,49 @@ class PaperTrader:
                 else:
                     self.entry_price = ((self.entry_price * abs(self.position)) + (price * lots)) / (abs(self.position) + lots)
                 self.position -= lots
+                
+                # 記錄 ENTRY 到資料庫
+                if self.db:
+                    trade_record = {
+                        'ticker': self.ticker, 'direction': 'SHORT', 'type': 'ENTRY',
+                        'entry_time': timestamp, 'entry_price': price, 'lots': lots,
+                    }
+                    self._record_trade_to_db(trade_record)
+                
                 return f"Entry SHORT {lots} at {price}"
-            
+
         elif (signal == "EXIT" or signal == "PARTIAL_EXIT") and self.position != 0:
             lots_to_exit = lots if signal == "PARTIAL_EXIT" else abs(self.position)
             lots_to_exit = min(lots_to_exit, abs(self.position))
-            
+
             pnl_pts = (price - self.entry_price) * (1 if self.position > 0 else -1)
             broker_fee = self.fee_per_side * 2 * lots_to_exit
             exchange_fee = self.exchange_fee_per_side * 2 * lots_to_exit
             tax_cost = ((self.entry_price + price) * self.point_value * self.tax_rate) * lots_to_exit
             total_cost = broker_fee + exchange_fee + tax_cost
             pnl_cash = (pnl_pts * self.point_value * lots_to_exit) - total_cost
-            
+
             direction = "LONG" if self.position > 0 else "SHORT"
-            self.trades.append({
+            trade_record = {
                 "ticker": self.ticker, "entry_time": self.entry_time, "exit_time": timestamp,
                 "direction": direction, "entry_price": self.entry_price, "exit_price": price,
                 "lots": lots_to_exit, "pnl_points": pnl_pts, "gross_pnl_cash": pnl_pts * self.point_value * lots_to_exit,
                 "broker_fee": broker_fee, "exchange_fee": exchange_fee, "tax_cost": tax_cost,
                 "total_cost": total_cost, "pnl_cash": pnl_cash, "type": signal
-            })
+            }
+            self.trades.append(trade_record)
             self.balance += pnl_cash
             
+            # 記錄 EXIT 到資料庫
+            if self.db:
+                self._record_trade_to_db(trade_record)
+
             if signal == "EXIT" or lots_to_exit == abs(self.position):
                 self.position, self.entry_price, self.current_stop_loss = 0, 0, None
             else:
                 self.position = (abs(self.position) - lots_to_exit) * (1 if self.position > 0 else -1)
             return f"{signal} {lots_to_exit} at {price}, PnL: {pnl_cash:.0f}"
-            
+
         return None
 
     def update_trailing_stop(self, current_price: float):
