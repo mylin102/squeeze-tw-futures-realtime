@@ -3,14 +3,25 @@ from datetime import datetime
 import os
 
 class PaperTrader:
-    def __init__(self, ticker="MXFR1", initial_balance=100000):
+    def __init__(
+        self,
+        ticker="TMF",
+        initial_balance=100000,
+        point_value=10,
+        fee_per_side=20,
+        exchange_fee_per_side=0,
+        tax_rate=0.0,
+    ):
         self.ticker = ticker
         self.balance = initial_balance
         self.position = 0  
         self.entry_price = 0
         self.entry_time = None
         self.trades = []
-        self.fee_per_side = 20 
+        self.point_value = point_value
+        self.fee_per_side = fee_per_side
+        self.exchange_fee_per_side = exchange_fee_per_side
+        self.tax_rate = tax_rate
         self.current_stop_loss = None
         self.be_triggered = False
         self.be_points = None
@@ -45,13 +56,19 @@ class PaperTrader:
             lots_to_exit = min(lots_to_exit, abs(self.position))
             
             pnl_pts = (price - self.entry_price) * (1 if self.position > 0 else -1)
-            pnl_cash = (pnl_pts * 10 * lots_to_exit) - (self.fee_per_side * 2 * lots_to_exit)
+            broker_fee = self.fee_per_side * 2 * lots_to_exit
+            exchange_fee = self.exchange_fee_per_side * 2 * lots_to_exit
+            tax_cost = ((self.entry_price + price) * self.point_value * self.tax_rate) * lots_to_exit
+            total_cost = broker_fee + exchange_fee + tax_cost
+            pnl_cash = (pnl_pts * self.point_value * lots_to_exit) - total_cost
             
             direction = "LONG" if self.position > 0 else "SHORT"
             self.trades.append({
                 "ticker": self.ticker, "entry_time": self.entry_time, "exit_time": timestamp,
                 "direction": direction, "entry_price": self.entry_price, "exit_price": price,
-                "lots": lots_to_exit, "pnl_points": pnl_pts, "pnl_cash": pnl_cash, "type": signal
+                "lots": lots_to_exit, "pnl_points": pnl_pts, "gross_pnl_cash": pnl_pts * self.point_value * lots_to_exit,
+                "broker_fee": broker_fee, "exchange_fee": exchange_fee, "tax_cost": tax_cost,
+                "total_cost": total_cost, "pnl_cash": pnl_cash, "type": signal
             })
             self.balance += pnl_cash
             
@@ -81,7 +98,13 @@ class PaperTrader:
     def get_performance_report(self):
         if not self.trades: return "No trades."
         df = pd.DataFrame(self.trades)
-        return f"# 📊 Report\n- **PnL**: {df['pnl_cash'].sum():+,.0f} TWD\n- **WinRate**: {(df['pnl_cash']>0).mean()*100:.1f}%\n\n{df.to_markdown()}"
+        return (
+            f"# 📊 Report\n"
+            f"- **PnL**: {df['pnl_cash'].sum():+,.0f} TWD\n"
+            f"- **WinRate**: {(df['pnl_cash']>0).mean()*100:.1f}%\n"
+            f"- **Total Cost**: {df['total_cost'].sum():,.0f} TWD\n\n"
+            f"{df.to_markdown()}"
+        )
 
     def save_report(self):
         os.makedirs("exports/simulations", exist_ok=True)

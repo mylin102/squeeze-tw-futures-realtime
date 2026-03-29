@@ -11,6 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from squeeze_futures.data.downloader import download_futures_data
 from squeeze_futures.data.shioaji_client import ShioajiClient
+from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
 from squeeze_futures.engine.simulator import PaperTrader
 from squeeze_futures.report.notifier import send_email_notification
@@ -70,15 +71,52 @@ def run_simulation(ticker="TMF"):
         'pb_buffer': PB.get('buffer', 1.002)
     }
 
-    trader = PaperTrader(ticker=ticker)
+    trader = PaperTrader(ticker=ticker, point_value=get_point_value(ticker))
     shioaji = ShioajiClient()
     shioaji.login()
     contract = shioaji.get_futures_contract(ticker)
-    
-    console.print(f"🚀 Squeeze Trader Started - Mode: {'LIVE' if LIVE_TRADING else 'PAPER'}")
+    live_ready = LIVE_TRADING and shioaji.is_logged_in and contract is not None
+    if LIVE_TRADING and not live_ready:
+        console.print("[bold yellow]LIVE requested, but broker session/contract is unavailable. Falling back to PAPER.[/bold yellow]")
+
+    console.print(f"🚀 Squeeze Trader Started - Mode: {'LIVE' if live_ready else 'PAPER'}")
     
     has_tp1_hit = False
     last_processed_bar = None
+
+    def execute_trade(signal: str, price: float, ts, lots: int, *, stop_loss=None, break_even_trigger=None):
+        action = None
+        if signal == "BUY":
+            action = "Buy"
+        elif signal == "SELL":
+            action = "Sell"
+        elif signal in {"EXIT", "PARTIAL_EXIT"}:
+            if trader.position == 0:
+                return None
+            action = "Sell" if trader.position > 0 else "Buy"
+
+        if live_ready and action is not None:
+            trade = shioaji.place_order(contract, action=action, quantity=lots)
+            if trade is None:
+                console.print(f"[bold red][{ts}] Live order failed: {signal} {lots}[/bold red]")
+                return None
+
+        return trader.execute_signal(
+            signal,
+            price,
+            ts,
+            lots=lots,
+            max_lots=MGMT["max_positions"],
+            stop_loss=stop_loss,
+            break_even_trigger=break_even_trigger,
+        )
+
+    def check_stop_loss(ts, market_price: float):
+        if trader.position > 0 and trader.current_stop_loss and market_price <= trader.current_stop_loss:
+            return execute_trade("EXIT", trader.current_stop_loss, ts, abs(trader.position))
+        if trader.position < 0 and trader.current_stop_loss and market_price >= trader.current_stop_loss:
+            return execute_trade("EXIT", trader.current_stop_loss, ts, abs(trader.position))
+        return None
 
     try:
         while True:
@@ -86,7 +124,8 @@ def run_simulation(ticker="TMF"):
             is_weekend_test = os.getenv("WEEKEND_TEST") == "1"
             
             if not market["open"] and not is_weekend_test:
-                if trader.position != 0: trader.execute_signal("EXIT", trader.entry_price, datetime.now())
+                if trader.position != 0:
+                    execute_trade("EXIT", trader.entry_price, datetime.now(), abs(trader.position))
                 console.print(f"[{datetime.now().strftime('%H:%M:%S')}] Market Closed. Sleeping...", end="\r")
                 time.sleep(300); continue
 
@@ -128,16 +167,17 @@ def run_simulation(ticker="TMF"):
                 if TP['enabled'] and abs(trader.position) == MGMT['lots_per_trade'] and not has_tp1_hit:
                     pnl_pts = (last_price - trader.entry_price) * (1 if trader.position > 0 else -1)
                     if pnl_pts >= TP['tp1_pts']:
-                        msg = trader.execute_signal("PARTIAL_EXIT", last_price, timestamp, lots=TP['tp1_lots'])
+                        msg = execute_trade("PARTIAL_EXIT", last_price, timestamp, TP['tp1_lots'])
                         if msg:
-                            log_msg = "[TP1 HIT] " + msg; real_action = "Sell" if trader.position > 0 else "Buy"
                             has_tp1_hit = True; trader.current_stop_loss = trader.entry_price
 
-                stop_msg = trader.check_stop_loss(last_price, timestamp)
+                stop_msg = check_stop_loss(timestamp, last_price)
                 if not stop_msg and RISK["exit_on_vwap"]:
                     if (trader.position > 0 and last_price < vwap and not last_5m['opening_bullish']) or \
                        (trader.position < 0 and last_price > vwap and not last_5m['opening_bearish']):
-                        stop_msg = trader.execute_signal("EXIT", last_price, timestamp); stop_msg = "[VWAP] " + stop_msg
+                        stop_msg = execute_trade("EXIT", last_price, timestamp, abs(trader.position))
+                        if stop_msg:
+                            stop_msg = "[VWAP] " + stop_msg
                 
                 if stop_msg:
                     console.print(f"[bold yellow][{timestamp}] {stop_msg}[/bold yellow]")
@@ -155,11 +195,11 @@ def run_simulation(ticker="TMF"):
                 can_short = (last_15m['Close'] < last_15m['ema_filter'] or last_5m['opening_bearish'])
 
                 if (sqz_buy or pb_buy) and can_long and MGMT["allow_long"]:
-                    if not LIVE_TRADING or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
-                        trader.execute_signal("BUY", last_price, timestamp, lots=MGMT["lots_per_trade"], max_lots=MGMT["max_positions"], stop_loss=RISK["stop_loss_pts"], break_even_trigger=RISK["break_even_pts"])
+                    if not live_ready or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
+                        execute_trade("BUY", last_price, timestamp, MGMT["lots_per_trade"], stop_loss=RISK["stop_loss_pts"], break_even_trigger=RISK["break_even_pts"])
                 elif (sqz_sell or pb_sell) and can_short and MGMT["allow_short"]:
-                    if not LIVE_TRADING or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
-                        trader.execute_signal("SELL", last_price, timestamp, lots=MGMT["lots_per_trade"], max_lots=MGMT["max_positions"], stop_loss=RISK["stop_loss_pts"], break_even_trigger=RISK["break_even_pts"])
+                    if not live_ready or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
+                        execute_trade("SELL", last_price, timestamp, MGMT["lots_per_trade"], stop_loss=RISK["stop_loss_pts"], break_even_trigger=RISK["break_even_pts"])
 
             time.sleep(30)
 

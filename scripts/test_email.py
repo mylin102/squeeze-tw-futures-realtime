@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import datetime
 
 # 加入 src 到路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -47,7 +48,7 @@ def test():
 
 def test_alert():
     print("\nTesting Real-time TRADE ALERT notification...")
-    ticker = "MXFR1"
+    ticker = "TMF"
     action = "BUY (Entry)"
     price = 23456.0
     score = 85.5
@@ -76,6 +77,5 @@ def test_alert():
         print("Success! Check for 'TRADE ALERT' in your inbox.")
 
 if __name__ == "__main__":
-    from datetime import datetime
     test() # 執行報告預覽
     test_alert() # 執行即時警報預覽

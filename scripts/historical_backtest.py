@@ -21,6 +21,7 @@ from rich.progress import Progress
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.simulator import PaperTrader
 
 console = Console()
@@ -94,8 +95,7 @@ def load_and_resample(rpt_path, interval="5min", product_code="TMF"):
 
 def run_historical_backtest(days=60, product="TMF"):
     # 微台指 TMF 1點=10元, 小台指 MX 1點=50元
-    point_value = 10 if product == "TMF" else 50
-    trader = PaperTrader(ticker=product)
+    trader = PaperTrader(ticker=product, point_value=get_point_value(product))
     
     raw_data_dir = Path("data/taifex_raw")
     raw_data_dir.mkdir(parents=True, exist_ok=True)

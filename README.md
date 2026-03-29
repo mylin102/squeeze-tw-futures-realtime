@@ -1,6 +1,6 @@
 # 🚀 Squeeze Taiwan Index Futures Ultimate System
 
-專為台灣指數期貨 (TMF/MX) 打造的專業級自動化交易系統。本系統採用最新的 **Hybrid 進場引擎**、**Opening Regime (開盤強弱判定)** 與 **Partial Exit (分批停利)** 策略，在 60 天回測中展現了卓越的獲利爆發力。
+專為微型臺指期貨 `TMF` 打造的專業級自動化交易系統。本系統採用最新的 **Hybrid 進場引擎**、**Opening Regime (開盤強弱判定)** 與 **Partial Exit (分批停利)** 策略，在歷史回測中展現出明確的趨勢追蹤能力。
 
 ---
 
@@ -46,9 +46,9 @@ risk_mgmt:
 
 ---
 
-## 📊 績效回測 (TMF - 60D)
-- **單口操作 (1 lot)**: +23,750 TWD
-- **分批停利 (2 -> 1 lots)**: **+83,070 TWD** (目前預設)
+## 📊 績效回測 (TMF)
+- 最新成本化回測請參考 `exports/simulations/backtest_performance_*.md`
+- 目前預設商品與模擬標的是 `TMF`
 
 ---
 

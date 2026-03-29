@@ -41,3 +41,14 @@ risk_mgmt:
   stop_loss_pts: 30
   break_even_pts: 30
   exit_on_vwap: true
+
+# 4. 回測執行與交易成本模型
+execution:
+  order_type: "market"        # market | limit | range_market
+  tick_size: 1.0
+  market_slippage_pts: 1.0
+  limit_offset_pts: 2.0
+  range_protection_pts: 3.0
+  broker_fee_per_side: 20.0   # 依券商實際手續費調整
+  exchange_fee_per_side: 0.0  # 若已含在券商手續費，可維持 0
+  tax_rate: 0.00002           # 台灣股價指數期貨稅率，TMF 使用此假設

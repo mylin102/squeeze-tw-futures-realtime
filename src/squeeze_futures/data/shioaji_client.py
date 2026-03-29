@@ -12,6 +12,15 @@ except ImportError:
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+INTERVAL_MAP = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "60m": "1h",
+    "1h": "1h",
+}
+
 class ShioajiClient:
     def __init__(self):
         self.api = None
@@ -63,8 +72,15 @@ class ShioajiClient:
     def place_order(self, contract, action: str, quantity: int, price: float = 0):
         if not self.is_logged_in: return None
         try:
+            action_value = action
+            if sj is not None and isinstance(action, str):
+                normalized = action.strip().lower()
+                if normalized == "buy":
+                    action_value = sj.constant.Action.Buy
+                elif normalized == "sell":
+                    action_value = sj.constant.Action.Sell
             order = self.api.Order(
-                action=action, price=price, quantity=quantity,
+                action=action_value, price=price, quantity=quantity,
                 order_type=sj.constant.OrderType.MTL,
                 price_type=sj.constant.StockPriceType.MKT if price == 0 else sj.constant.StockPriceType.LMT,
                 market_type=sj.constant.FuturesMarketType.Night if datetime.now().hour >= 15 or datetime.now().hour < 5 else sj.constant.FuturesMarketType.Common
@@ -86,8 +102,17 @@ class ShioajiClient:
             if df.empty: return df
             df.ts = pd.to_datetime(df.ts)
             df.set_index('ts', inplace=True)
+            rule = INTERVAL_MAP.get(interval, interval)
+            if rule != "1min":
+                df = df.resample(rule, label="right", closed="left").agg({
+                    "Open": "first",
+                    "High": "max",
+                    "Low": "min",
+                    "Close": "last",
+                    "Volume": "sum",
+                })
             df = df.rename(columns={'Open':'Open','High':'High','Low':'Low','Close':'Close','Volume':'Volume'})
-            return df
+            return df.dropna(subset=["Open", "High", "Low", "Close"])
         except Exception: return pd.DataFrame()
 
     def logout(self):

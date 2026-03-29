@@ -63,10 +63,10 @@ SMTP_RECIPIENT=您的收信帳號
 
 ```bash
 # 每日日盤自動啟動 (08:45)
-45 8 * * 1-5 /Users/mylin/Documents/mylin102/squeeze-tw-futures-realtime/autostart.sh
+45 8 * * 1-5 /Users/mylin/Documents/mylin102/tw-futures-realtime/autostart.sh
 
 # 每日夜盤自動啟動 (15:00)
-0 15 * * 1-5 /Users/mylin/Documents/mylin102/squeeze-tw-futures-realtime/autostart.sh
+0 15 * * 1-5 /Users/mylin/Documents/mylin102/tw-futures-realtime/autostart.sh
 ```
 
 **提示**：`autostart.sh` 會將執行日誌記錄在 `logs/automation.log`，方便出問題時追蹤。
@@ -77,7 +77,7 @@ SMTP_RECIPIENT=您的收信帳號
 
 - **定期檢查 Log**: 若發現 Shioaji 登入頻繁失敗，請檢查憑證是否過期。
 - **微調參數**: 如果覺得進場次數太少，可將 `MTF Score` 門檻從 70 降至 60。
-- **手續費更新**: 若交易微台指以外的商品，請至 `simulator.py` 修改 `fee_per_side` 與點數價值計算。
+- **成本更新**: 若要調整微台指 `TMF` 的手續費、期交稅或成交模型，請優先更新 `config/trade_config.yaml` 的 `execution` 區塊。
 
 ---
 

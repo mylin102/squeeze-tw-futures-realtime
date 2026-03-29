@@ -11,6 +11,7 @@ import itertools
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.simulator import PaperTrader
 
 console = Console()
@@ -29,7 +30,7 @@ def load_data(data_dir="data/taifex_raw"):
     return pd.concat(all_5m).sort_index(), pd.concat(all_15m).sort_index(), pd.concat(all_1h).sort_index()
 
 def run_single_backtest(data_5m, data_15m, data_1h, entry_score, stop_loss, length):
-    trader = PaperTrader(ticker="TMF_OPT")
+    trader = PaperTrader(ticker="TMF_OPT", point_value=get_point_value("TMF"))
     
     # Calculate with specific length
     p5 = calculate_futures_squeeze(data_5m, bb_length=length, kc_length=length)

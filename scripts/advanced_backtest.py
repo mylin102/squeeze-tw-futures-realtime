@@ -12,6 +12,8 @@ from rich.table import Table
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.constants import get_point_value
+from squeeze_futures.engine.execution import build_execution_model, simulate_order_fill
 from squeeze_futures.engine.simulator import PaperTrader
 from historical_backtest import load_and_resample
 
@@ -22,7 +24,16 @@ def load_config():
     with open(config_path, 'r') as f: return yaml.safe_load(f)
 
 def execute_engine(p5, p15, p1h, cfg, use_partial=False):
-    trader = PaperTrader(ticker="TMF", initial_balance=100000)
+    exec_cfg = cfg.get("execution", {})
+    execution_model = build_execution_model(exec_cfg)
+    trader = PaperTrader(
+        ticker="TMF",
+        initial_balance=100000,
+        point_value=get_point_value("TMF"),
+        fee_per_side=exec_cfg.get("broker_fee_per_side", 20),
+        exchange_fee_per_side=exec_cfg.get("exchange_fee_per_side", 0),
+        tax_rate=exec_cfg.get("tax_rate", 0.0),
+    )
     equity_curve = []
     has_tp1_hit = False
     
@@ -59,11 +70,17 @@ def execute_engine(p5, p15, p1h, cfg, use_partial=False):
                 pb_buy = p5['is_new_high'].iloc[max(0, i-12):i].any() and row['in_bull_pb_zone'] and price > row['Open'] and row['bullish_align']
                 sqz_sell = (not row['sqz_on']) and score <= -STRAT['entry_score'] and price < vwap and row['mom_state'] == 0
                 pb_sell = p5['is_new_low'].iloc[max(0, i-12):i].any() and row['in_bear_pb_zone'] and price < row['Open'] and row['bearish_align']
-                if (sqz_buy or pb_buy): trader.execute_signal("BUY", price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=RISK['stop_loss_pts'], break_even_trigger=RISK['break_even_pts'])
-                elif (sqz_sell or pb_sell): trader.execute_signal("SELL", price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=RISK['stop_loss_pts'], break_even_trigger=RISK['break_even_pts'])
+                if sqz_buy or pb_buy:
+                    fill_price = simulate_order_fill("BUY", price, row, execution_model)
+                    if fill_price is not None:
+                        trader.execute_signal("BUY", fill_price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=RISK['stop_loss_pts'], break_even_trigger=RISK['break_even_pts'])
+                elif sqz_sell or pb_sell:
+                    fill_price = simulate_order_fill("SELL", price, row, execution_model)
+                    if fill_price is not None:
+                        trader.execute_signal("SELL", fill_price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=RISK['stop_loss_pts'], break_even_trigger=RISK['break_even_pts'])
             elif trader.position > 0 and (row['mom_state'] < 2 or score < 20): trader.execute_signal("EXIT", price, curr_time); has_tp1_hit = False
             elif trader.position < 0 and (row['mom_state'] > 1 or score > -20): trader.execute_signal("EXIT", price, curr_time); has_tp1_hit = False
-        equity_curve.append(trader.balance + ((price - trader.entry_price) * trader.position * 10 if trader.position != 0 else 0))
+        equity_curve.append(trader.balance + ((price - trader.entry_price) * trader.position * trader.point_value if trader.position != 0 else 0))
     return equity_curve, trader
 
 def run_partial_pk():

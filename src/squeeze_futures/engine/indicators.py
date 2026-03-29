@@ -28,7 +28,10 @@ def calculate_futures_squeeze(df: pd.DataFrame, bb_length=14, bb_std=2.0, kc_len
     mom_cols = [c for c in sqz.columns if 'SQZ_' in c and not any(x in c for x in ['ON', 'OFF', 'NO'])]
     res['momentum'] = sqz[mom_cols[0]].fillna(0) if mom_cols else 0
     
-    res['vwap'] = (res['Close'] * res['Volume']).cumsum() / res['Volume'].cumsum()
+    res['date'] = res.index.date
+    typical_price_x_volume = res['Close'] * res['Volume']
+    res['vwap'] = typical_price_x_volume.groupby(res['date']).cumsum() / res['Volume'].groupby(res['date']).cumsum()
+    res['price_vs_vwap'] = np.where(res['vwap'] != 0, (res['Close'] - res['vwap']) / res['vwap'], 0.0)
     res['fired'] = (~res['sqz_on']) & (res['sqz_on'].shift(1) == True)
     
     # 2. 動能狀態 (mom_state)
@@ -56,7 +59,6 @@ def calculate_futures_squeeze(df: pd.DataFrame, bb_length=14, bb_std=2.0, kc_len
     res['in_bear_pb_zone'] = (res['Close'] >= res['ema_fast'] * (2 - pb_buffer)) & (res['Close'] <= res['ema_slow']) & res['bearish_align']
 
     # 5. 開盤強弱判定
-    res['date'] = res.index.date
     res['day_open'] = res.groupby('date')['Open'].transform('first')
     res['day_min'] = res.groupby('date')['Low'].cummin()
     res['day_max'] = res.groupby('date')['High'].cummax()

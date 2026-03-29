@@ -16,6 +16,8 @@ from jinja2 import Template
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.constants import get_point_value
+from squeeze_futures.engine.execution import build_execution_model, simulate_order_fill
 from squeeze_futures.engine.simulator import PaperTrader
 from historical_backtest import load_and_resample
 
@@ -28,7 +30,16 @@ def plot_to_base64(fig):
 
 def execute_backtest_full(p5, p15, p1h, length, score_thresh, regime, sl_pts, force_close, cfg_base):
     """執行完整回測，包含收盤清倉邏輯判斷"""
-    trader = PaperTrader(ticker="TMF", initial_balance=100000)
+    exec_cfg = cfg_base.get("execution", {})
+    execution_model = build_execution_model(exec_cfg)
+    trader = PaperTrader(
+        ticker="TMF",
+        initial_balance=100000,
+        point_value=get_point_value("TMF"),
+        fee_per_side=exec_cfg.get("broker_fee_per_side", 20),
+        exchange_fee_per_side=exec_cfg.get("exchange_fee_per_side", 0),
+        tax_rate=exec_cfg.get("tax_rate", 0.0),
+    )
     equity_curve = []
     weights = cfg_base['strategy']['weights']
     pb_cfg = cfg_base['strategy']['pullback']
@@ -77,23 +88,31 @@ def execute_backtest_full(p5, p15, p1h, length, score_thresh, regime, sl_pts, fo
         if trader.position == 0:
             if not row['sqz_on']:
                 if score >= score_thresh and price > vwap and row['mom_state'] == 3 and can_long:
-                    trader.execute_signal("BUY", price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
+                    fill_price = simulate_order_fill("BUY", price, row, execution_model)
+                    if fill_price is not None:
+                        trader.execute_signal("BUY", fill_price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
                 elif score <= -score_thresh and price < vwap and row['mom_state'] == 0 and can_short:
-                    trader.execute_signal("SELL", price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
+                    fill_price = simulate_order_fill("SELL", price, row, execution_model)
+                    if fill_price is not None:
+                        trader.execute_signal("SELL", fill_price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
             
             if trader.position == 0:
                 lb = pb_cfg.get('lookback', 60) // 5
                 if p5['is_new_high'].iloc[max(0, i-lb):i].any() and row['in_bull_pb_zone'] and price > row['Open'] and row['bullish_align'] and can_long:
-                    trader.execute_signal("BUY", price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
+                    fill_price = simulate_order_fill("BUY", price, row, execution_model)
+                    if fill_price is not None:
+                        trader.execute_signal("BUY", fill_price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
                 elif p5['is_new_low'].iloc[max(0, i-lb):i].any() and row['in_bear_pb_zone'] and price < row['Open'] and row['bearish_align'] and can_short:
-                    trader.execute_signal("SELL", price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
+                    fill_price = simulate_order_fill("SELL", price, row, execution_model)
+                    if fill_price is not None:
+                        trader.execute_signal("SELL", fill_price, curr_time, stop_loss=sl_pts, break_even_trigger=sl_pts)
         
         elif trader.position > 0 and (row['mom_state'] < 2 or score < 20):
             trader.execute_signal("EXIT", price, curr_time)
         elif trader.position < 0 and (row['mom_state'] > 1 or score > -20):
             trader.execute_signal("EXIT", price, curr_time)
 
-        cur_eq = trader.balance + ((price - trader.entry_price) * trader.position * 10 if trader.position != 0 else 0)
+        cur_eq = trader.balance + ((price - trader.entry_price) * trader.position * trader.point_value if trader.position != 0 else 0)
         equity_curve.append(cur_eq)
         
     return trader, equity_curve
