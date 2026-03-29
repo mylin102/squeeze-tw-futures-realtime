@@ -91,6 +91,9 @@ def run_simulation(ticker="TMF"):
     last_processed_bar = None
 
     def execute_trade(signal: str, price: float, ts, lots: int, *, stop_loss=None, break_even_trigger=None):
+        """
+        執行交易並發送通知（僅 LIVE 模式）
+        """
         action = None
         if signal == "BUY":
             action = "Buy"
@@ -107,7 +110,7 @@ def run_simulation(ticker="TMF"):
                 console.print(f"[bold red][{ts}] Live order failed: {signal} {lots}[/bold red]")
                 return None
 
-        return trader.execute_signal(
+        result = trader.execute_signal(
             signal,
             price,
             ts,
@@ -116,6 +119,40 @@ def run_simulation(ticker="TMF"):
             stop_loss=stop_loss,
             break_even_trigger=break_even_trigger,
         )
+        
+        # 🚀 發送交易通知（僅 LIVE 模式）
+        if live_ready and result:
+            direction = "🟢 BUY" if signal == "BUY" else "🔴 SELL" if signal == "SELL" else "⚪ EXIT"
+            pnl_text = ""
+            if "PnL" in result:
+                pnl_text = f"PnL: {result.split('PnL: ')[-1]}"
+            
+            html_body = f"""<html><body style="font-family: Arial, sans-serif;">
+                <div style="padding: 20px; background: #f5f5f5;">
+                    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 20px;">
+                        <h2 style="color: #1a1a2e;">{direction}</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666;">Time</td><td>{ts.strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;">Ticker</td><td>{ticker}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;">Price</td><td>{price:.0f}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;">Lots</td><td>{lots}</td></tr>
+                            {f'<tr><td style="padding: 8px 0; color: #666;">{pnl_text}</td><td></td></tr>' if pnl_text else ''}
+                        </table>
+                        <div style="margin-top: 20px; padding: 10px; background: #e8f4fd; border-radius: 5px; font-size: 12px; color: #666;">
+                            Squeeze Futures Auto-Trader
+                        </div>
+                    </div>
+                </div>
+            </body></html>"""
+            
+            send_email_notification(
+                subject=f"[TW Futures] {signal} {ticker} @ {price:.0f}",
+                body_text=f"{signal} {ticker} {lots} lots @ {price:.0f}. {pnl_text}",
+                body_html=html_body
+            )
+            console.print(f"[dim]✉️  Trade notification sent[/dim]")
+        
+        return result
 
     def check_stop_loss(ts, market_price: float):
         if trader.position > 0 and trader.current_stop_loss and market_price <= trader.current_stop_loss:
@@ -137,6 +174,23 @@ def run_simulation(ticker="TMF"):
                 console.print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Market Closed. Shutting down...")
                 console.print("[dim]Saving final report...[/dim]")
                 trader.save_report()
+                
+                # 🚀 可選：收盤後寄送模擬交易報告
+                # 取消下方註解以啟用
+                # report_path = trader.save_report()
+                # from pathlib import Path
+                # html_report = f"""<html><body>
+                #     <h1>Daily Simulation Report</h1>
+                #     <p>Mode: {'LIVE' if live_ready else 'PAPER'}</p>
+                #     <p>Total Trades: {len(trader.trades)}</p>
+                #     <p>Net PnL: {trader.balance - 100000:+,.0f} TWD</p>
+                # </body></html>"""
+                # send_email_notification(
+                #     subject=f"[TW Futures] Daily Report {datetime.now().strftime('%Y-%m-%d')}",
+                #     body_text=f"Daily PnL: {trader.balance - 100000:+,.0f} TWD",
+                #     body_html=html_report
+                # )
+                
                 shioaji.logout()
                 console.print("[green]✓ Trader shutdown complete.[/green]")
                 break  # 退出無限循環
