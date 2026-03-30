@@ -6,10 +6,10 @@ live_trading: false
 # 1. 策略核心參數
 strategy:
   length: 20
-  entry_score: 30            # 【放寬】從 50 降至 30，大幅增加進場機會
+  entry_score: 50            # 【改進】從 30 提高至 50，提升進場品質
   use_squeeze: true
   use_pullback: true
-  regime_filter: "loose"     # 【放寬】從 "mid" 改為 "loose"，放寬趨勢過濾
+  regime_filter: "mid"       # 【改進】從 loose 改為 mid，增加趨勢過濾
 
   pullback:
     ema_fast: 20
@@ -20,7 +20,7 @@ strategy:
   # 🚀 分批停利策略 (Partial Exit)
   partial_exit:
     enabled: true
-    tp1_pts: 30              # 【放寬】從 40 降至 30，更容易達成第一階段停利
+    tp1_pts: 50              # 【改進】從 30 提高至 50，讓獲利奔跑
     tp1_lots: 1              # 第一階段平倉 1 口
 
   weights:
@@ -45,18 +45,29 @@ risk_mgmt:
   #   - 固定 30 點：+71,356 TWD, 勝率 44.0%, MDD 15,042, PF 1.62
   ma_stop_type: "below"        # "below"=MA 下方/上方固定 tick 數
   ma_stop_length: 20           # MA20 最佳
-  ma_stop_ticks: 5             # 5 tick 最佳測試值
+  ma_stop_ticks: 10            # 【改進】從 5 提高至 10，避免夜盤震盪
   ma_stop_multiplier: 1.0      # 啟用 MA 停損
 
   # --- 固定停損（備援）---
-  stop_loss_pts: 30            # 固定停損點數（MA 停損失效時使用）
-  break_even_pts: 30           # 移動到保本停損的獲利點數
-  exit_on_vwap: true           # VWAP 離場
+  stop_loss_pts: 50            # 【改進】從 30 提高至 50，避免夜盤震盪出局
+  break_even_pts: 40           # 【改進】從 30 提高至 40
+  exit_on_vwap: false          # 【改進】禁用 VWAP 離場 (夜盤持續虧損)
 
   # --- ATR 動態停損 ---
   # 回測結果：ATR 0.1x 以上全部虧損，建議停用
   atr_length: 14
   atr_multiplier: 0.0          # 停用 ATR 停損
+
+  # --- 移動停損 (Trailing Stop) ---
+  # 【新增】保護未實現獲利
+  trailing_stop_enabled: true
+  trailing_stop_trigger_pts: 30    # 獲利達 30 點啟動移動停損
+  trailing_stop_distance_pts: 15   # 移動停損距離 15 點
+
+  # --- 時間過濾 ---
+  # 【新增】避開高波動時段
+  time_filter_enabled: true
+  skip_hours: [21, 22]             # 避開 21:00-23:00 夜盤高波動
 
 # 4. 回測執行與交易成本模型
 execution:
