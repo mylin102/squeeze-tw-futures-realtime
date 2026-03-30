@@ -77,3 +77,9 @@ execution:
   broker_fee_per_side: 20.0   # 依券商實際手續費調整
   exchange_fee_per_side: 0.0  # 若已含在券商手續費，可維持 0
   tax_rate: 0.00002           # 台灣股價指數期貨稅率，TMF 使用此假設
+  initial_balance: 100000     # 初始帳戶餘額
+
+# 5. 實時監控與輪詢設定
+monitoring:
+  poll_interval_secs: 30      # 輪詢間隔（秒）
+  pb_confirmation_bars: 12    # 高點/低點確認週期（K 棒數量）

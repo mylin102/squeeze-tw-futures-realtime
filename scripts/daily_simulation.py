@@ -60,9 +60,11 @@ def get_market_status():
 def run_simulation(ticker="TMF"):
     cfg = load_config()
     LIVE_TRADING, STRATEGY, MGMT, RISK = cfg['live_trading'], cfg['strategy'], cfg['trade_mgmt'], cfg['risk_mgmt']
+    EXEC = cfg.get('execution', {})  # 執行與成本模型
+    MONITOR = cfg.get('monitoring', {})  # 監控設定
     PB, TP = STRATEGY.get('pullback', {}), STRATEGY.get('partial_exit', {})
     FILTER_MODE = STRATEGY.get('regime_filter', 'mid')
-    
+
     # ATR 動態停損參數
     # atr_multiplier > 0 → 使用 ATR 動態停損
     # atr_multiplier = 0 → 使用固定停損 (stop_loss_pts)
@@ -77,7 +79,24 @@ def run_simulation(ticker="TMF"):
         'pb_buffer': PB.get('buffer', 1.002)
     }
 
-    trader = PaperTrader(ticker=ticker, point_value=get_point_value(ticker))
+    # 從配置文件讀取交易成本參數
+    INITIAL_BALANCE = EXEC.get('initial_balance', 100000)
+    FEE_PER_SIDE = EXEC.get('broker_fee_per_side', 20)
+    EXCHANGE_FEE = EXEC.get('exchange_fee_per_side', 0)
+    TAX_RATE = EXEC.get('tax_rate', 0.0)
+
+    # 從配置文件讀取監控設定
+    POLL_INTERVAL = MONITOR.get('poll_interval_secs', 30)
+    PB_CONFIRM_BARS = MONITOR.get('pb_confirmation_bars', 12)
+
+    trader = PaperTrader(
+        ticker=ticker,
+        initial_balance=INITIAL_BALANCE,
+        point_value=get_point_value(ticker),
+        fee_per_side=FEE_PER_SIDE,
+        exchange_fee_per_side=EXCHANGE_FEE,
+        tax_rate=TAX_RATE
+    )
     shioaji = ShioajiClient()
     shioaji.login()
     contract = shioaji.get_futures_contract(ticker)
@@ -456,9 +475,9 @@ def run_simulation(ticker="TMF"):
                     stop_loss_pts = RISK["stop_loss_pts"]
                 
                 sqz_buy = (not last_5m['sqz_on']) and score >= STRATEGY["entry_score"] and last_price > vwap and last_5m['mom_state'] == 3
-                pb_buy = df_5m['is_new_high'].tail(12).any() and last_5m['in_bull_pb_zone'] and last_price > last_5m['Open']
+                pb_buy = df_5m['is_new_high'].tail(PB_CONFIRM_BARS).any() and last_5m['in_bull_pb_zone'] and last_price > last_5m['Open']
                 sqz_sell = (not last_5m['sqz_on']) and score <= -STRATEGY["entry_score"] and last_price < vwap and last_5m['mom_state'] == 0
-                pb_sell = df_5m['is_new_low'].tail(12).any() and last_5m['in_bear_pb_zone'] and last_price < last_5m['Open']
+                pb_sell = df_5m['is_new_low'].tail(PB_CONFIRM_BARS).any() and last_5m['in_bear_pb_zone'] and last_price < last_5m['Open']
 
                 can_long = (last_15m['Close'] > last_15m['ema_filter'] or last_5m['opening_bullish'])
                 can_short = (last_15m['Close'] < last_15m['ema_filter'] or last_5m['opening_bearish'])
@@ -470,7 +489,7 @@ def run_simulation(ticker="TMF"):
                     if not live_ready or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
                         execute_trade("SELL", last_price, timestamp, MGMT["lots_per_trade"], stop_loss=stop_loss_pts, break_even_trigger=RISK["break_even_pts"])
 
-            time.sleep(30)
+            time.sleep(POLL_INTERVAL)
 
     except KeyboardInterrupt: pass
     finally: trader.save_report(); shioaji.logout()
