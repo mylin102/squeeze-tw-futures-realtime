@@ -1,6 +1,7 @@
 import os
 import logging
 import pandas as pd
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Callable, Optional, Dict, Any
 from collections import deque
@@ -11,7 +12,7 @@ except ImportError:
     sj = None
 
 load_dotenv()
-logger = logging.getLogger.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 INTERVAL_MAP = {
     "1m": "1min",
