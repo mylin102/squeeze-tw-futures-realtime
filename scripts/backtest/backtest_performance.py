@@ -7,10 +7,12 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
-from advanced_backtest import execute_engine
-from historical_backtest import load_and_resample
-from indicators import calculate_futures_squeeze
+# Add src to path for local development
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+
+from scripts.backtest.advanced_backtest import execute_engine
+from scripts.backtest.historical_backtest import load_and_resample
+from squeeze_futures.engine.indicators import calculate_futures_squeeze
 
 
 def load_config():

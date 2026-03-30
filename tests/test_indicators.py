@@ -1,14 +1,10 @@
 import os
-import sys
 
 import pandas as pd
 
-# Add scripts directory to path for indicators import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-
 os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
 
-from indicators import calculate_futures_squeeze
+from squeeze_futures.engine.indicators import calculate_futures_squeeze
 
 
 def test_calculate_futures_squeeze_adds_vwap_fields_and_resets_daily_vwap():

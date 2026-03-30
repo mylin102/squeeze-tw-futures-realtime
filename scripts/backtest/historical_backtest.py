@@ -17,12 +17,12 @@ from pathlib import Path
 from rich.console import Console
 from rich.progress import Progress
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+# Add src to path for local development
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.simulator import PaperTrader
-from indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
 
 console = Console()
 

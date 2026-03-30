@@ -10,13 +10,14 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+# Add src to path for local development
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from historical_backtest import load_and_resample
+from scripts.backtest.historical_backtest import load_and_resample
 from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.execution import build_execution_model, simulate_order_fill
 from squeeze_futures.engine.simulator import PaperTrader
-from indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment
 
 
 console = Console()

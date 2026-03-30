@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-MA 動態停損回測比較腳本
-基於 atr_backtest_comparison.py 的邏輯，加入 MA 停損支援
+ATR 倍數優化腳本
+
+測試不同 ATR 倍數，找到最佳停損參數
 """
 import sys
 import os
@@ -11,13 +12,19 @@ from typing import Dict
 
 import pandas as pd
 import yaml
+from rich.console import Console
+from rich.table import Table
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
-from squeeze_futures.engine.simulator import PaperTrader, calculate_ma_stop_price
+# Add src to path for local development
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+
+from squeeze_futures.engine.simulator import PaperTrader
 from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.execution import build_execution_model, simulate_order_fill
-from historical_backtest import load_and_resample
-from indicators import calculate_futures_squeeze, calculate_mtf_alignment
+from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment, calculate_atr
+from scripts.backtest.historical_backtest import load_and_resample
+
+console = Console()
 
 
 def load_config():
@@ -26,17 +33,17 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def execute_engine(p5, p15, p1h, cfg, use_ma_stop: bool = False, ma_mult: float = 0.0, ma_len: int = 20, ma_ticks: int = 5):
+def execute_engine(p5, p15, p1h, cfg, use_atr: bool = False, atr_mult: float = 2.0):
     """
-    執行回測 - 完全基於 atr_backtest_comparison.py 的邏輯
+    執行回測
     
     Args:
         p5, p15, p1h: 各週期的數據
         cfg: 配置
-        use_ma_stop: 是否使用 MA 停損
-        ma_mult: MA 停損倍數
-        ma_len: MA 週期
-        ma_ticks: MA 下方/上方 tick 數
+        use_atr: 是否使用 ATR（已廢用，改由 atr_mult 控制）
+        atr_mult: ATR 倍數
+                  - atr_mult = 0    → 使用固定停損
+                  - atr_mult > 0    → 使用 ATR 動態停損
     """
     exec_cfg = cfg.get("execution", {})
     execution_model = build_execution_model(exec_cfg)
@@ -54,24 +61,39 @@ def execute_engine(p5, p15, p1h, cfg, use_ma_stop: bool = False, ma_mult: float 
     has_tp1_hit = False
     
     STRAT, MGMT, RISK = cfg['strategy'], cfg['trade_mgmt'], cfg['risk_mgmt']
-    PB, TP = STRAT.get('pullback', {}), STRAT.get('partial_exit', {})
+    TP = STRAT.get('partial_exit', {})
     
+    # ATR 參數
+    atr_length = RISK.get('atr_length', 14)
     fixed_sl = RISK["stop_loss_pts"]
-    lots_entry = 2
     
-    # MA 停損參數
-    ma_type = "below"
+    # 停損模式判定：atr_mult > 0 使用 ATR，否則使用固定停損
+    if use_atr and atr_mult > 0:
+        atr_5m = calculate_atr(p5, length=atr_length)
+    else:
+        atr_5m = None
+    
+    lots_entry = 2
     
     for i in range(len(p5)):
         curr_time = p5.index[i]
         row = p5.iloc[i]
         price, vwap = row['Close'], row['vwap']
         
-        # --- 持倉管理 ---
+        # 計算當前停損點數
+        if atr_5m is not None and i >= atr_length:
+            current_atr = atr_5m.iloc[i]
+            if not pd.isna(current_atr):
+                stop_loss_pts = current_atr * atr_mult
+            else:
+                stop_loss_pts = fixed_sl
+        else:
+            stop_loss_pts = fixed_sl
+        
+        # 持倉管理
         if trader.position != 0:
             trader.update_trailing_stop(price)
             
-            # 分批停利
             if lots_entry == 2 and abs(trader.position) == 2 and not has_tp1_hit:
                 pnl = (price - trader.entry_price) * (1 if trader.position > 0 else -1)
                 if pnl >= TP.get('tp1_pts', 40):
@@ -79,32 +101,15 @@ def execute_engine(p5, p15, p1h, cfg, use_ma_stop: bool = False, ma_mult: float 
                     trader.current_stop_loss = trader.entry_price
                     has_tp1_hit = True
             
-            # MA 動態停損檢查（最優先）
-            if use_ma_stop and ma_mult > 0:
-                ma_stop_price_val = calculate_ma_stop_price(
-                    p5.iloc[:i+1], trader.position, ma_type, ma_len, ma_ticks, ma_mult,
-                    use_prev_ma=True,
-                    entry_price=trader.entry_price if trader.position != 0 else None
-                )
-                if ma_stop_price_val is not None:
-                    if trader.position > 0 and price <= ma_stop_price_val:
-                        trader.execute_signal("EXIT", ma_stop_price_val, curr_time)
-                        has_tp1_hit = False
-                    elif trader.position < 0 and price >= ma_stop_price_val:
-                        trader.execute_signal("EXIT", ma_stop_price_val, curr_time)
-                        has_tp1_hit = False
-            
-            # 固定停損檢查
-            if trader.position != 0 and trader.check_stop_loss(price, curr_time):
+            if trader.check_stop_loss(price, curr_time):
                 has_tp1_hit = False
-            # VWAP 離場
-            elif trader.position != 0 and RISK['exit_on_vwap']:
+            elif RISK['exit_on_vwap']:
                 if (trader.position > 0 and price < vwap and not row['opening_bullish']) or \
                    (trader.position < 0 and price > vwap and not row['opening_bearish']):
                     trader.execute_signal("EXIT", price, curr_time)
                     has_tp1_hit = False
         
-        # --- 進場邏輯 ---
+        # 進場邏輯
         m15 = p15[p15.index <= curr_time]
         if not m15.empty:
             score = calculate_mtf_alignment(
@@ -124,11 +129,11 @@ def execute_engine(p5, p15, p1h, cfg, use_ma_stop: bool = False, ma_mult: float 
                 if sqz_buy or pb_buy:
                     fill_price = simulate_order_fill("BUY", price, row, execution_model)
                     if fill_price is not None:
-                        trader.execute_signal("BUY", fill_price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=fixed_sl, break_even_trigger=RISK['break_even_pts'])
+                        trader.execute_signal("BUY", fill_price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=stop_loss_pts, break_even_trigger=RISK['break_even_pts'])
                 elif sqz_sell or pb_sell:
                     fill_price = simulate_order_fill("SELL", price, row, execution_model)
                     if fill_price is not None:
-                        trader.execute_signal("SELL", fill_price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=fixed_sl, break_even_trigger=RISK['break_even_pts'])
+                        trader.execute_signal("SELL", fill_price, curr_time, lots=lots_entry, max_lots=lots_entry, stop_loss=stop_loss_pts, break_even_trigger=RISK['break_even_pts'])
             
             elif trader.position > 0 and (row['mom_state'] < 2 or score < 20):
                 trader.execute_signal("EXIT", price, curr_time)
@@ -177,18 +182,15 @@ def calculate_metrics(trader, trades_df: pd.DataFrame, equity_curve: list) -> Di
 
 
 def main():
-    print("=" * 60)
-    print("MA 動態停損回測比較")
-    print("=" * 60)
+    console.print("=" * 60)
+    console.print("[bold cyan]ATR 倍數優化測試[/bold cyan]")
+    console.print("=" * 60)
     
     cfg = load_config()
-    print(f"\n載入配置完成")
-    print(f"  - 策略長度：{cfg['strategy']['length']}")
-    print(f"  - 進場分數：{cfg['strategy']['entry_score']}")
-    print(f"  - 固定停損：{cfg['risk_mgmt']['stop_loss_pts']} 點")
+    RISK = cfg['risk_mgmt']  # 用於標籤顯示
     
     # 載入數據
-    print("\n載入數據中...")
+    console.print("\n[dim]載入數據中...[/dim]")
     files = sorted(Path("data/taifex_raw").glob("Daily_*.rpt"))
     all_d, all_d15, all_d1h = [], [], []
     for f in files:
@@ -201,7 +203,7 @@ def main():
             all_d1h.append(d1h)
     
     # 計算 Squeeze 指標
-    print("計算 Squeeze 指標...")
+    console.print("[dim]計算 Squeeze 指標...[/dim]")
     pb = cfg["strategy"]["pullback"]
     p_args = {
         "bb_length": cfg["strategy"]["length"],
@@ -215,47 +217,45 @@ def main():
     p15 = calculate_futures_squeeze(pd.concat(all_d15).sort_index(), **p_args)
     p1h = calculate_futures_squeeze(pd.concat(all_d1h).sort_index(), **p_args)
     
-    print(f"  - 5m K 棒：{len(p5)} 根")
+    console.print(f"[dim]  - 5m K 棒：{len(p5)} 根[/dim]")
     
-    # 測試不同停損模式
-    test_configs = [
-        ("固定 30 點", False, 0, 60, 5),
-        ("MA20-5tick", True, 1.0, 20, 5),
-        ("MA20-10tick", True, 1.0, 20, 10),
-        ("MA60-5tick", True, 1.0, 60, 5),
-        ("MA60-10tick", True, 1.0, 60, 10),
-        ("MA60-15tick", True, 1.0, 60, 15),
-        ("MA60-20tick", True, 1.0, 60, 20),
-    ]
-    
+    # 測試不同 ATR 倍數（包含小數值）
+    # atr_multiplier = 0 → 固定停損
+    # atr_multiplier > 0 → ATR 動態停損
+    atr_multipliers = [0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 1.0, 1.5, 2.0, 0]  # 0 = 固定停損
     results = []
-    
-    print("\n" + "=" * 60)
-    print("測試不同停損模式")
-    print("=" * 60)
-    
-    for label, use_ma, mult, ma_len, ma_tk in test_configs:
-        print(f"\n[dim]測試 {label}...[/dim]")
-        eq, trader = execute_engine(p5, p15, p1h, cfg, use_ma_stop=use_ma, ma_mult=mult, ma_len=ma_len, ma_ticks=ma_tk)
+
+    console.print("\n" + "=" * 60)
+    console.print("[bold]測試不同 ATR 倍數[/bold]")
+    console.print("=" * 60)
+
+    for atr_mult in atr_multipliers:
+        if atr_mult == 0:
+            label = f"固定 {RISK.get('stop_loss_pts', 30)}點"
+        else:
+            label = f"ATR {atr_mult}x"
+        console.print(f"\n[dim]測試 {label}...[/dim]")
+        eq, trader = execute_engine(p5, p15, p1h, cfg, use_atr=(atr_mult > 0), atr_mult=atr_mult)
         trades = pd.DataFrame(trader.trades)
         metrics = calculate_metrics(trader, trades, eq)
         
         results.append({
+            'atr_mult': atr_mult,
             'label': label,
-            **metrics,
+            'net_profit': metrics['net_profit'],
+            'total_trades': metrics['total_trades'],
+            'win_rate': metrics['win_rate'],
+            'max_drawdown': metrics['max_drawdown'],
+            'profit_factor': metrics['profit_factor'],
+            'avg_trade': metrics['avg_trade'],
         })
         
-        print(f"  淨獲利：{metrics['net_profit']:+,.0f} TWD | 交易：{metrics['total_trades']} | 勝率：{metrics['win_rate']:.1f}% | MDD: {metrics['max_drawdown']:,.0f} | PF: {metrics['profit_factor']:.2f}")
+        console.print(f"  淨獲利：{metrics['net_profit']:+,.0f} TWD | 交易：{metrics['total_trades']} | 勝率：{metrics['win_rate']:.1f}% | MDD: {metrics['max_drawdown']:,.0f} | PF: {metrics['profit_factor']:.2f}")
     
     # 顯示結果表格
-    print("\n" + "=" * 60)
-    print("綜合比較")
-    print("=" * 60)
-    
-    from rich.console import Console
-    from rich.table import Table
-    
-    console = Console()
+    console.print("\n" + "=" * 60)
+    console.print("[bold green]綜合比較[/bold green]")
+    console.print("=" * 60)
     
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Strategy", justify="center")
@@ -280,35 +280,50 @@ def main():
     
     console.print(table)
     
-    # 找出最佳結果
-    best = max(results, key=lambda x: x['net_profit'])
-    console.print(f"\n[bold green]✅ 最佳停損策略：{best['label']}[/bold green]")
-    console.print(f"  淨獲利：{best['net_profit']:+,.0f} TWD")
-    console.print(f"  勝率：{best['win_rate']:.1f}%")
-    console.print(f"  獲利因子：{best['profit_factor']:.2f}")
+    # 找出最佳結果（排除固定停損）
+    atr_results = [r for r in results if r['atr_mult'] > 0]
+    fixed_results = [r for r in results if r['atr_mult'] == 0]
+    
+    if atr_results:
+        best = max(atr_results, key=lambda x: x['net_profit'])
+        console.print(f"\n[bold green]✅ 最佳 ATR 倍數：{best['atr_mult']}x[/bold green]")
+        console.print(f"  淨獲利：{best['net_profit']:+,.0f} TWD")
+        console.print(f"  勝率：{best['win_rate']:.1f}%")
+        console.print(f"  獲利因子：{best['profit_factor']:.2f}")
+        
+        if fixed_results:
+            fixed = fixed_results[0]
+            delta = best['net_profit'] - fixed['net_profit']
+            if delta > 0:
+                console.print(f"\n[bold green]✅ ATR {best['atr_mult']}x 獲利提升 {delta:,.0f} TWD[/bold green]")
+            else:
+                console.print(f"\n[bold red]❌ 固定停損獲利較佳 {abs(delta):,.0f} TWD[/bold red]")
+                console.print(f"  固定停損：{fixed['net_profit']:+,.0f} TWD")
     
     # 儲存報告
-    output_path = Path(__file__).parent.parent / "exports" / "simulations" / f"ma_stop_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    output_path = Path(__file__).parent.parent / "exports" / "simulations" / f"atr_optimization_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write("# MA Dynamic Stop Loss Comparison Report\n\n")
+        f.write("# ATR Multiplier Optimization Report\n\n")
         f.write(f"- Generated at: {datetime.now().isoformat(timespec='seconds')}\n")
         f.write(f"- Data: {len(p5)} 5m bars\n\n")
         
-        f.write("## Summary\n\n")
+        f.write("## Results\n\n")
         f.write("| Strategy | Net Profit | Trades | Win Rate | Max DD | Profit Factor | Avg Trade |\n")
         f.write("|:--|--:|--:|--:|--:|--:|--:|\n")
         for r in results:
             f.write(f"| {r['label']} | {r['net_profit']:+,.0f} | {r['total_trades']} | {r['win_rate']:.1f}% | {r['max_drawdown']:,.0f} | {r['profit_factor']:.2f} | {r['avg_trade']:+,.0f} |\n")
         
-        f.write(f"\n## Best Configuration\n\n")
-        f.write(f"- **Best Strategy**: {best['label']}\n")
-        f.write(f"- **Net Profit**: {best['net_profit']:+,.0f} TWD\n")
-        f.write(f"- **Win Rate**: {best['win_rate']:.1f}%\n")
-        f.write(f"- **Profit Factor**: {best['profit_factor']:.2f}\n")
+        if atr_results:
+            best = max(atr_results, key=lambda x: x['net_profit'])
+            f.write(f"\n## Best ATR Configuration\n\n")
+            f.write(f"- **Best ATR Multiplier**: {best['atr_mult']}x\n")
+            f.write(f"- **Net Profit**: {best['net_profit']:+,.0f} TWD\n")
+            f.write(f"- **Win Rate**: {best['win_rate']:.1f}%\n")
+            f.write(f"- **Profit Factor**: {best['profit_factor']:.2f}\n")
     
-    print(f"\n📄 報告已儲存至：{output_path}")
+    console.print(f"\n[dim]📄 報告已儲存至：{output_path}[/dim]")
 
 
 if __name__ == "__main__":

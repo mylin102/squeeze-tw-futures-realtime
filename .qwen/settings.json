@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill *)",
+      "Bash(find *)",
+      "Bash(uv *)",
+      "Bash(truncate *)",
+      "Bash(bash *)",
+      "Bash(sleep *)",
+      "Bash(tail *)",
+      "Bash(cd *)",
+      "Bash(git add *)",
+      "Bash(git restore *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(cp *)",
+      "Bash(mkdir *)",
+      "Bash(mv *)",
+      "Bash(git checkout *)"
+    ]
+  },
+  "$version": 3
+}

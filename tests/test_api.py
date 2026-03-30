@@ -4,8 +4,8 @@ from rich.console import Console
 from rich.table import Table
 from dotenv import load_dotenv
 
-# 加入 src 到路徑
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+# Add src to path for local development
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 try:
     import shioaji as sj

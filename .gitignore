@@ -1,9 +1,39 @@
+# Python
 node_modules/
 .env
 .venv/
 __pycache__/
-.pytest_cache/
 *.py[cod]
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
 logs/
 *.log
-.DS_Store
+
+# Data and exports
+data/*.rpt
+data/*.csv
+exports/
+
+# Reports
+*.html
+*.md
+
+# Test artifacts
+.coverage
+htmlcov/
+.tox/
+
+# Cache
+.cache/
+*.egg-info/

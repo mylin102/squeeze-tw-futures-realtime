@@ -2,8 +2,8 @@ import sys
 import os
 from datetime import datetime
 
-# 加入 src 到路徑
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+# Add src to path for local development
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from squeeze_futures.report.notifier import send_email_notification
 

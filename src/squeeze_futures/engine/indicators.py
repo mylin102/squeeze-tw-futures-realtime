@@ -5,29 +5,29 @@ import pandas_ta as ta
 def calculate_atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
     """
     計算 ATR (Average True Range)
-    
+
     Args:
         df: 包含 High, Low, Close 的 DataFrame
         length: ATR 計算週期，預設 14
-    
+
     Returns:
         ATR Series
     """
     if df.empty or len(df) < length:
         return pd.Series(index=df.index, dtype=float)
-    
+
     high = df['High']
     low = df['Low']
     close_prev = df['Close'].shift(1)
-    
+
     # 計算 True Range
     tr1 = high - low
     tr2 = abs(high - close_prev)
     tr3 = abs(low - close_prev)
-    
+
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     atr = tr.rolling(window=length).mean()
-    
+
     return atr
 
 
@@ -39,12 +39,12 @@ def calculate_futures_squeeze(df: pd.DataFrame, bb_length=14, bb_std=2.0, kc_len
     df = df.copy()
     if df.empty:
         return df
-    
+
     # Normalize column names
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(-1)
     df.columns = [c.capitalize() for c in df.columns]
-    
+
     # Check if we have enough data for full calculation
     min_required = max(bb_length, ema_slow, lookback, ema_macro)
     if len(df) < min_required:
@@ -81,21 +81,21 @@ def calculate_futures_squeeze(df: pd.DataFrame, bb_length=14, bb_std=2.0, kc_len
     # 使用 regex 精確抓取列名，避免 pandas_ta 版本差異
     sqz = df.ta.squeeze(bb_length=bb_length, bb_std=bb_std, kc_length=kc_length, kc_scalar=kc_scalar, lazy=True)
     res = df.copy()
-    
+
     # 尋找 SQZ_ON
     sqz_on_cols = [c for c in sqz.columns if 'SQZ_ON' in c]
     res['sqz_on'] = sqz[sqz_on_cols[0]].astype(bool) if sqz_on_cols else False
-    
+
     # 尋找 Momentum (排除 ON/OFF/NO 的那一列)
     mom_cols = [c for c in sqz.columns if 'SQZ_' in c and not any(x in c for x in ['ON', 'OFF', 'NO'])]
     res['momentum'] = sqz[mom_cols[0]].fillna(0) if mom_cols else 0
-    
+
     res['date'] = res.index.date
     typical_price_x_volume = res['Close'] * res['Volume']
     res['vwap'] = typical_price_x_volume.groupby(res['date']).cumsum() / res['Volume'].groupby(res['date']).cumsum()
     res['price_vs_vwap'] = np.where(res['vwap'] != 0, (res['Close'] - res['vwap']) / res['vwap'], 0.0)
     res['fired'] = (~res['sqz_on']) & (res['sqz_on'].shift(1) == True)
-    
+
     # 2. 動能狀態 (mom_state)
     res['mom_prev'] = res['momentum'].shift(1).fillna(0)
     def get_mom_state(row):
@@ -103,15 +103,15 @@ def calculate_futures_squeeze(df: pd.DataFrame, bb_length=14, bb_std=2.0, kc_len
         if m > 0: return 3 if m >= p else 2
         else: return 0 if m <= p else 1
     res['mom_state'] = res.apply(get_mom_state, axis=1)
-    
+
     # 3. 趨勢指標
     res['ema_fast'] = df.ta.ema(length=ema_fast)
     res['ema_slow'] = df.ta.ema(length=ema_slow)
-    res['ema_filter'] = df.ta.ema(length=60) 
+    res['ema_filter'] = df.ta.ema(length=60)
     res['ema_macro'] = df.ta.ema(length=ema_macro)
     res['bullish_align'] = res['ema_fast'] > res['ema_slow']
     res['bearish_align'] = res['ema_fast'] < res['ema_slow']
-    
+
     # 4. 極值與拉回
     res['recent_high'] = res['Close'].rolling(window=lookback).max()
     res['recent_low'] = res['Close'].rolling(window=lookback).min()
@@ -126,7 +126,7 @@ def calculate_futures_squeeze(df: pd.DataFrame, bb_length=14, bb_std=2.0, kc_len
     res['day_max'] = res.groupby('date')['High'].cummax()
     res['opening_bullish'] = (res['Close'] > res['day_open']) & (res['day_min'] >= res['day_open'] * 0.999)
     res['opening_bearish'] = (res['Close'] < res['day_open']) & (res['day_max'] <= res['day_open'] * 1.001)
-    
+
     return res
 
 def calculate_mtf_alignment(data_dict: dict[str, pd.DataFrame], weights=None) -> dict:
