@@ -10,15 +10,16 @@ live_trading: false
 # 1. 策略核心參數 (夜盤版)
 strategy:
   length: 20
-  entry_score: 40            # 夜盤適中門檻
+  entry_score: 35            # 夜盤適中門檻 (降低)
   use_squeeze: true
   use_pullback: true
   regime_filter: "loose"     # 夜盤放寬趨勢過濾
   
-  # TSM 確認參數
+  # TSM 確認參數 (15 分線)
   tsm_confirmation: true     # 啟用 TSM 確認
-  tsm_min_confidence: 0.6    # TSM 最低信心度
+  tsm_min_confidence: 0.5    # TSM 最低信心度 (降低)
   tsm_correlation_threshold: 0.7  # 最低相關性門檻
+  tsm_timeframe: "15m"       # 【關鍵】TSM 使用 15 分線
 
   pullback:
     ema_fast: 20
@@ -32,10 +33,11 @@ strategy:
     tp1_pts: 60              # 夜盤目標更大
     tp1_lots: 1
 
+  # MTF 權重 (15 分線為主)
   weights:
-    "1h": 0.2
-    "15m": 0.4
-    "5m": 0.4
+    "1h": 0.3                # 1 小時權重提高
+    "15m": 0.5               # 15 分權重最高 (看趨勢)
+    "5m": 0.2                # 5 分權重降低 (找進場點)
 
 # 2. 部位管理
 trade_mgmt:
