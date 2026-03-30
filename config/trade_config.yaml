@@ -6,22 +6,22 @@ live_trading: false
 # 1. 策略核心參數
 strategy:
   length: 20
-  entry_score: 70
+  entry_score: 50            # 【方案 A】從 70 降至 50，增加進場機會
   use_squeeze: true
   use_pullback: true
   regime_filter: "mid"
-  
+
   pullback:
     ema_fast: 20
     ema_slow: 60
     lookback: 60
     buffer: 1.002
 
-  # 🚀 新增：分批停利策略 (Partial Exit)
+  # 🚀 分批停利策略 (Partial Exit)
   partial_exit:
-    enabled: true      # 是否啟動分批停利
-    tp1_pts: 40        # 第一階段停利點數 (40 點)
-    tp1_lots: 1        # 第一階段平倉口數
+    enabled: true
+    tp1_pts: 40              # 第一階段停利點數 (40 點)
+    tp1_lots: 1              # 第一階段平倉口數
 
   weights:
     "1h": 0.2
@@ -38,34 +38,25 @@ trade_mgmt:
 
 # 3. 風險控管
 risk_mgmt:
-  # --- 固定停損 ---
-  stop_loss_pts: 30            # 固定停損點數（ATR 停用時使用）
-  break_even_pts: 30           # 移動到保本停損的獲利點數
-  exit_on_vwap: true           # 是否於價格跌破/突破 VWAP 時離場
-  
-  # --- ATR 動態停損 ---
-  # 設定說明：
-  #   atr_multiplier = 0     → 停用 ATR，使用上方固定停損 (stop_loss_pts)
-  #   atr_multiplier > 0     → 啟用 ATR，停損點數 = ATR 值 × atr_multiplier
-  #   建議測試範圍：0.1 ~ 0.15 (緊停損)，不建議 > 0.3 (停損過寬)
-  atr_length: 14               # ATR 計算週期（K 棒數量）
-  atr_multiplier: 0.0          # ATR 停損倍數：0=停用，>0=啟用（最佳測試值：0.1）
-  
-  # --- MA 動態停損 ---
-  # 設定說明：
-  #   ma_stop_multiplier = 0     → 停用 MA 停損
-  #   ma_stop_multiplier > 0     → 啟用 MA 停損，停損價 = MA ± (ma_stop_ticks × ma_stop_multiplier)
-  #   適用於趨勢市，建議搭配固定停損使用
-  #   
+  # --- MA 動態停損（主停損）---
   # 回測結果（2026-03-29）：
-  #   - MA20-5tick: +215,575 TWD, 勝率 64.5%, MDD 9,422, PF 3.33 ✅ 最佳
-  #   - MA20-10tick: +206,887 TWD, 勝率 64.8%, MDD 9,326, PF 3.27
+  #   - MA20-5tick: +95,352 TWD, 勝率 43.7%, MDD 8,471, PF 2.04 ✅ 最佳
+  #   - MA20-10tick: +90,178 TWD, 勝率 43.7%, MDD 9,307, PF 1.93
   #   - 固定 30 點：+71,356 TWD, 勝率 44.0%, MDD 15,042, PF 1.62
-  #   - MA60-5tick: +34,934 TWD, 勝率 44.6%, MDD 24,661, PF 1.23
-  ma_stop_type: "below"        # "below"=MA 下方/上方固定 tick 數，"cross"=跌破/突破 MA
-  ma_stop_length: 20           # 使用哪條 MA（20=最佳，60=較差）
-  ma_stop_ticks: 5             # MA 下方/上方幾個 tick（1 tick = 1 點，僅 type=below 時使用）
-  ma_stop_multiplier: 1.0      # MA 停損倍數：0=停用，>0=啟用（1.0=最佳）
+  ma_stop_type: "below"        # "below"=MA 下方/上方固定 tick 數
+  ma_stop_length: 20           # MA20 最佳
+  ma_stop_ticks: 5             # 5 tick 最佳測試值
+  ma_stop_multiplier: 1.0      # 啟用 MA 停損
+
+  # --- 固定停損（備援）---
+  stop_loss_pts: 30            # 固定停損點數（MA 停損失效時使用）
+  break_even_pts: 30           # 移動到保本停損的獲利點數
+  exit_on_vwap: true           # VWAP 離場
+
+  # --- ATR 動態停損 ---
+  # 回測結果：ATR 0.1x 以上全部虧損，建議停用
+  atr_length: 14
+  atr_multiplier: 0.0          # 停用 ATR 停損
 
 # 4. 回測執行與交易成本模型
 execution:

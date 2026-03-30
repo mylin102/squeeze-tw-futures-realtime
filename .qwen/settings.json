@@ -19,7 +19,8 @@
       "Bash(mv *)",
       "Bash(git checkout *)",
       "Bash(head *)",
-      "Bash(od *)"
+      "Bash(od *)",
+      "Bash(ls *)"
     ]
   },
   "$version": 3
