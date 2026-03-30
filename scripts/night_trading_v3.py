@@ -29,7 +29,12 @@ console = Console()
 
 def load_config(config_file: str = "config/night_config.yaml"):
     """載入配置文件"""
-    config_path = os.path.join(os.path.dirname(__file__), "..", config_file)
+    # 支援絕對路徑和相對路徑
+    if os.path.isabs(config_file):
+        config_path = config_file
+    else:
+        config_path = os.path.join(os.path.dirname(__file__), "..", config_file)
+    
     with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 

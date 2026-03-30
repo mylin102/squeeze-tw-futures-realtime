@@ -1,0 +1,63 @@
+# Squeeze Futures Crontab 配置
+# 編輯方式：crontab -e
+
+# 環境變數設定
+SHELL=/bin/bash
+PATH=/usr/local/bin:/bin:/usr/bin:/usr/local/sbin
+LANG=zh_TW.UTF-8
+
+# ============================================
+# 台指期交易系統
+# ============================================
+
+# 🌙 夜盤啟動 (週一至週五 14:55)
+# 提前 5 分鐘啟動，確保系統就緒
+0 15 * * 1-5 /Users/mylin/Documents/mylin102/tw-futures-realtime/autostart.sh
+
+# ☀️ 日盤啟動 (週一至週五 08:40)
+# 提前 5 分鐘啟動，確保系統就緒
+40 8 * * 1-5 /Users/mylin/Documents/mylin102/tw-futures-realtime/autostart.sh
+
+# ============================================
+# 系統維護
+# ============================================
+
+# 每日凌晨 4:00 清理舊日誌 (保留 7 天)
+0 4 * * * find /Users/mylin/Documents/mylin102/tw-futures-realtime/logs -name "*.log" -mtime +7 -delete
+
+# 每週一 09:00 發送週報
+0 9 * * 1 /Users/mylin/Documents/mylin102/tw-futures-realtime/scripts/weekly_report.py
+
+# ============================================
+# 監控
+# ============================================
+
+# 每 5 分鐘檢查交易系統狀態
+*/5 * * * * ps aux | grep -v grep | grep "night_trading_v3.py\\|daily_simulation_v2.py" > /dev/null || echo "[$(date)] Trading system not running" >> /Users/mylin/Documents/mylin102/tw-futures-realtime/logs/monitor.log
+
+# ============================================
+# 備註
+# ============================================
+# 
+# 時間說明：
+# - 夜盤：15:00-05:00 (台北時間，包含跨夜)
+# - 日盤：08:45-13:45 (台北時間)
+# 
+# 節假日說明：
+# - 台灣國定假日停市
+# - 美國國定假日 TSM 停市
+# 
+# 日誌位置：
+# - 交易日誌：/Users/mylin/Documents/mylin102/tw-futures-realtime/logs/automation.log
+# - 監控日誌：/Users/mylin/Documents/mylin102/tw-futures-realtime/logs/monitor.log
+# 
+# 手動啟動：
+# 夜盤：bash /Users/mylin/Documents/mylin102/tw-futures-realtime/autostart.sh
+# 日盤：bash /Users/mylin/Documents/mylin102/tw-futures-realtime/autostart.sh
+# 
+# 查看日誌：
+# tail -f /Users/mylin/Documents/mylin102/tw-futures-realtime/logs/automation.log
+# 
+# 停止交易：
+# pkill -f "night_trading_v3.py"
+# pkill -f "daily_simulation_v2.py"
