@@ -5,4 +5,4 @@ cd /Users/mylin/Documents/mylin102/tw-futures-realtime
 # 使用 uv 執行模擬交易
 # 日誌會存到 logs/automation.log
 mkdir -p logs
-/Users/mylin/.local/bin/uv run scripts/daily_simulation.py TMF >> logs/automation.log 2>&1
+/Users/mylin/.local/bin/uv run python scripts/daily_simulation.py TMF >> logs/automation.log 2>&1

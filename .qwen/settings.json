@@ -17,7 +17,9 @@
       "Bash(cp *)",
       "Bash(mkdir *)",
       "Bash(mv *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(head *)",
+      "Bash(od *)"
     ]
   },
   "$version": 3
