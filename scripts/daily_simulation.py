@@ -12,9 +12,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from squeeze_futures.data.downloader import download_futures_data
 from squeeze_futures.data.shioaji_client import ShioajiClient
 from squeeze_futures.engine.constants import get_point_value
-from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment, calculate_atr
 from squeeze_futures.engine.simulator import PaperTrader
 from squeeze_futures.report.notifier import send_email_notification
+from indicators import calculate_futures_squeeze, calculate_mtf_alignment, calculate_atr
 
 console = Console()
 
