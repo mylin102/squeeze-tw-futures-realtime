@@ -20,7 +20,13 @@
       "Bash(git checkout *)",
       "Bash(head *)",
       "Bash(od *)",
-      "Bash(ls *)"
+      "Bash(ls *)",
+      "Bash(date)",
+      "Bash(ps *)",
+      "Bash(grep *)",
+      "Bash(nohup *)",
+      "Bash(echo *)",
+      "Bash(chmod *)"
     ]
   },
   "$version": 3
