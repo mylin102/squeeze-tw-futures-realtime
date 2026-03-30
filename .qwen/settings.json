@@ -27,7 +27,8 @@
       "Bash(nohup *)",
       "Bash(echo *)",
       "Bash(chmod *)",
-      "Bash(tee *)"
+      "Bash(tee *)",
+      "Bash(python3 *)"
     ]
   },
   "$version": 3

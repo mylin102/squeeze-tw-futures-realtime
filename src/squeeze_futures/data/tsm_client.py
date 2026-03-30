@@ -24,6 +24,10 @@ def download_tsm_data(period: str = "5d", interval: str = "5m") -> pd.DataFrame:
     """
     下載 TSM (台積電 ADR) 數據
     
+    數據源：
+    - 主要：Yahoo Finance (免費，即時 15 分鐘延遲)
+    - 備援：Shioaji API (目前不支援美股)
+    
     Args:
         period: 期間 (1d, 5d, 1mo, 3mo, 6mo, 1y)
         interval: 週期 (1m, 5m, 15m, 30m, 1h)
@@ -31,10 +35,10 @@ def download_tsm_data(period: str = "5d", interval: str = "5m") -> pd.DataFrame:
     Returns:
         DataFrame with OHLCV data
     """
+    console.print(f"[dim]從 Yahoo Finance 下載 TSM ({interval}, {period})...[/dim]")
+    
     try:
         import yfinance as yf
-        
-        console.print(f"[dim]從 Yahoo Finance 下載 TSM ({interval}, {period})...[/dim]")
         
         ticker = yf.Ticker("TSM")
         df = ticker.history(period=period, interval=interval)
@@ -54,11 +58,13 @@ def download_tsm_data(period: str = "5d", interval: str = "5m") -> pd.DataFrame:
         
         df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
         
-        console.print(f"[green]✓ 載入 {len(df)} 筆 TSM K 棒[/green]")
+        console.print(f"[green]✓ 載入 {len(df)} 筆 TSM K 棒 (Yahoo Finance)[/green]")
+        console.print("[dim]注意：Yahoo Finance 數據有 15 分鐘延遲[/dim]")
         return df
         
     except ImportError:
         console.print("[red]✗ yfinance 未安裝[/red]")
+        console.print("[dim]執行：pip install yfinance[/dim]")
         return None
     except Exception as e:
         console.print(f"[red]✗ 下載錯誤：{e}[/red]")
