@@ -1,0 +1,97 @@
+# ☀️ 日盤交易策略配置
+# 特點：
+# - 參考台股現貨走勢
+# - 標準停損 (日盤流動性高)
+# - 時間過濾 (專注主要交易時段)
+
+# 實戰總開關
+live_trading: false
+
+# 1. 策略核心參數 (日盤版)
+strategy:
+  length: 20
+  entry_score: 50            # 日盤較高門檻
+  use_squeeze: true
+  use_pullback: true
+  regime_filter: "mid"       # 日盤標準趨勢過濾
+  
+  # 台股現貨確認
+  spot_confirmation: false   # 可選：參考現貨走勢
+
+  pullback:
+    ema_fast: 20
+    ema_slow: 60
+    lookback: 60
+    buffer: 1.002
+
+  # 分批停利策略 (日盤版)
+  partial_exit:
+    enabled: true
+    tp1_pts: 40              # 日盤標準目標
+    tp1_lots: 1
+
+  weights:
+    "1h": 0.2
+    "15m": 0.4
+    "5m": 0.4
+
+# 2. 部位管理
+trade_mgmt:
+  lots_per_trade: 2          # 日盤標準部位
+  max_positions: 2
+  allow_long: true
+  allow_short: true
+  force_close_at_end: true   # 日盤強制收盤
+
+# 3. 風險控管 (日盤版)
+risk_mgmt:
+  # MA 動態停損 (日盤標準)
+  ma_stop_type: "below"
+  ma_stop_length: 20
+  ma_stop_ticks: 10          # 日盤標準
+  ma_stop_multiplier: 1.0
+
+  # 固定停損 (日盤標準)
+  stop_loss_pts: 50          # 日盤標準
+  break_even_pts: 40         # 日盤標準
+  exit_on_vwap: true         # 日盤啟用 VWAP
+
+  # 移動停損
+  trailing_stop_enabled: true
+  trailing_stop_trigger_pts: 30    # 日盤標準
+  trailing_stop_distance_pts: 15   # 日盤標準
+
+  # 時間過濾 (日盤專屬)
+  time_filter_enabled: true
+  skip_hours: []             # 日盤不跳過
+  max_holding_time_mins: 180 # 日盤最長持倉 3 小時
+
+# 4. 台股現貨配置 (可選)
+spot_config:
+  enabled: false
+  ticker: "0050.TW"
+  period: "5d"
+  interval: "5m"
+
+# 5. 回測執行與交易成本模型
+execution:
+  order_type: "market"
+  tick_size: 1.0
+  market_slippage_pts: 1.0   # 日盤滑價較小
+  limit_offset_pts: 2.0
+  range_protection_pts: 3.0
+  broker_fee_per_side: 20.0
+  exchange_fee_per_side: 0.0
+  tax_rate: 0.00002
+  initial_balance: 100000
+
+# 6. 實時監控與輪詢設定
+monitoring:
+  data_mode: "hybrid"
+  poll_interval_secs: 30     # 日盤標準輪詢
+  pb_confirmation_bars: 12
+  
+  callback:
+    use_tick_data: false
+    buffer_size: 100
+    health_check_secs: 60
