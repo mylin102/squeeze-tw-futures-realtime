@@ -482,9 +482,19 @@ def run_simulation(ticker="TMF"):
                 sqz_sell = (not last_5m['sqz_on']) and score <= -STRATEGY["entry_score"] and last_price < vwap and last_5m['mom_state'] <= 1
                 pb_sell = df_5m['is_new_low'].tail(PB_CONFIRM_BARS).any() and last_5m['in_bear_pb_zone'] and last_price < last_5m['Open']
 
-                # 【放寬趨勢過濾】
-                can_long = (last_15m['Close'] > last_15m['ema_filter'] * 0.998) or last_5m['opening_bullish']
-                can_short = (last_15m['Close'] < last_15m['ema_filter'] * 1.002) or last_5m['opening_bearish']
+                # 【趨勢過濾 - 根據 regime_filter 設定】
+                # loose: 完全禁用趨勢過濾
+                # mid: 15m EMA filter ±0.2%
+                # strict: 15m EMA filter ±0.1%
+                if FILTER_MODE == "loose":
+                    can_long = True
+                    can_short = True
+                elif FILTER_MODE == "mid":
+                    can_long = (last_15m['Close'] > last_15m['ema_filter'] * 0.998) or last_5m['opening_bullish']
+                    can_short = (last_15m['Close'] < last_15m['ema_filter'] * 1.002) or last_5m['opening_bearish']
+                else:  # strict
+                    can_long = (last_15m['Close'] > last_15m['ema_filter'] * 0.999) or last_5m['opening_bullish']
+                    can_short = (last_15m['Close'] < last_15m['ema_filter'] * 1.001) or last_5m['opening_bearish']
 
                 if (sqz_buy or pb_buy) and can_long and MGMT["allow_long"]:
                     if not live_ready or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
