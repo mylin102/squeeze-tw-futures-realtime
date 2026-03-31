@@ -8,7 +8,7 @@ execution:
   range_protection_pts: 3.0
   tax_rate: 2.0e-05
   tick_size: 1.0
-live_trading: false
+live_trading: true
 monitoring:
   callback:
     buffer_size: 100

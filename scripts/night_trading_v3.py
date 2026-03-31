@@ -21,8 +21,47 @@ from squeeze_futures.data.shioaji_client import ShioajiClient
 from squeeze_futures.data.tsm_client import download_tsm_data, calculate_tsm_indicators, get_tsm_signal, print_tsm_report
 from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.simulator import PaperTrader
+from scripts.trailing_stop import update_trailing_stop, reset_trailing_stop, STOP_LOSS_PTS, TAKE_PROFIT_PTS
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment, calculate_atr
 from squeeze_futures.report.notifier import send_email_notification
+
+
+def save_bar_data(row, score, regime_desc, ticker="TMF", live_mode=False):
+    """將每一棒的指標狀態存入 CSV (台北時間)"""
+    import os
+    import pytz
+    from datetime import datetime
+    
+    tw_tz = pytz.timezone('Asia/Taipei')
+    
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_dir = os.path.join(base_dir, "logs", "market_data")
+    os.makedirs(log_dir, exist_ok=True)
+    date_str = datetime.now(tw_tz).strftime("%Y%m%d")
+    # PAPER 和 LIVE 分開儲存
+    mode_suffix = '_LIVE' if live_mode else '_PAPER'
+    file_path = os.path.join(log_dir, f'{ticker}_{date_str}{mode_suffix}_indicators.csv')
+    
+    # 轉換時間為台北時間
+    ts = row.name
+    if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+        ts = ts.astimezone(tw_tz)
+    
+    data = {
+        "timestamp": [ts.strftime('%Y-%m-%d %H:%M:%S')],
+        "close": [row['Close']],
+        "vwap": [row.get('vwap', row['Close'])],
+        "score": [score],
+        "sqz_on": [row.get('sqz_on', False)],
+        "mom_state": [row.get('mom_state', 0)],
+        "regime": [regime_desc],
+        "bull_align": [row.get('bull_align', False)],
+        "bear_align": [row.get('bear_align', False)],
+        "in_pb_zone": [row.get('in_bull_pb_zone', False) or row.get('in_bear_pb_zone', False)]
+    }
+    df = pd.DataFrame(data)
+    header = not os.path.exists(file_path)
+    df.to_csv(file_path, mode='a', index=False, header=header)
 
 console = Console()
 
@@ -60,6 +99,7 @@ def should_skip_trading(timestamp: datetime, skip_hours: list) -> bool:
 def run_night_trading(ticker: str = "TMF"):
     """夜盤交易系統"""
     cfg = load_config("config/night_config.yaml")
+    LIVE_TRADING = cfg.get("live_trading", False)  # 交易模式
     
     # 解構配置
     STRATEGY = cfg['strategy']
@@ -126,10 +166,15 @@ def run_night_trading(ticker: str = "TMF"):
     
     # 初始化 Shioaji
     shioaji = ShioajiClient()
-    shioaji.login()
+    shioaji.login()  # 使用配置文件中的憑證登入
     contract = shioaji.get_futures_contract(ticker)
     
-    console.print(f"[bold green]🚀 Night Trader Started - Mode: PAPER[/bold green]\n")
+    # 確認交易模式
+    live_mode = cfg.get('live_trading', False)
+    if live_mode:
+        console.print("[bold red]🚀 LIVE TRADING - Real orders will be placed![/bold red]\n")
+    else:
+        console.print("[bold yellow]⚠️  PAPER TRADING - Simulated orders only[/bold yellow]\n")
     
     # 下載 TSM 數據
     tsm_df = None
@@ -206,6 +251,9 @@ def run_night_trading(ticker: str = "TMF"):
             if last_processed_bar != timestamp:
                 last_processed_bar = timestamp
                 console.print(f"[dim]Bar logged: {timestamp}[/dim]")
+
+                # 儲存數據
+                save_bar_data(last_5m, score, last_5m.get("regime", "NORMAL"), ticker, live_mode=LIVE_TRADING)
             
             # 2. 風控與分批平倉
             if trader.position != 0:
@@ -255,7 +303,9 @@ def run_night_trading(ticker: str = "TMF"):
                 
                 # 【關鍵改進】TSM 信號確認
                 tsm_confirmed = True
-                if USE_TSM and tsm_signal:
+                # 亞洲時段 (15:00-22:30): 完全禁用 TSM
+                use_tsm_now = USE_TSM and STRATEGY.get("tsm_confirmation", False)
+                if use_tsm_now and tsm_signal:
                     # 重新獲取最新 TSM 信號
                     tsm_signal = get_tsm_signal(tsm_df)
                     
@@ -327,23 +377,128 @@ def run_night_trading(ticker: str = "TMF"):
 
 
 def execute_trade(signal: str, price: float, ts, lots: int, trader, stop_loss=None, break_even_trigger=None):
-    """執行交易"""
-    result = trader.execute_signal(
-        signal, price, ts, lots=lots,
-        max_lots=2,
-        stop_loss=stop_loss,
-        break_even_trigger=break_even_trigger,
-    )
+    """
+    執行交易
+    - PAPER 模式：使用 PaperTrader.execute_signal()
+    - LIVE 模式：使用 shioaji.place_order() + 觸價單 (Stop Order)
+    """
+    result = None
     
+    # 檢查是否為 LIVE 模式
+    if LIVE_TRADING and live_ready:
+        # LIVE 模式：使用永豐 API 下單
+        action = None
+        if signal == "BUY":
+            action = "Buy"
+        elif signal == "SELL":
+            action = "Sell"
+        elif signal in ["EXIT", "PARTIAL_EXIT"]:
+            action = "Sell" if trader.position > 0 else "Buy"
+        
+        if action:
+            console.print(f"[dim]LIVE 下單：{action} {lots} 口 @ {price:.0f}[/dim]")
+            
+            try:
+                # 下達主單 (ROD)
+                trade = shioaji.place_order(
+                    contract,
+                    action=action,
+                    quantity=lots,
+                    price=price,
+                    order_type=sj.OrderType.ROD
+                )
+                
+                if trade:
+                    console.print(f"[green]✓ 主單已送出：{action} {lots} @ {price:.0f}[/green]")
+                    
+                    # 下達停損觸價單 (Stop Order)
+                    if stop_loss and signal in ["BUY", "SELL"]:
+                        stop_action = "Sell" if action == "Buy" else "Buy"
+                        stop_price = stop_loss
+                        
+                        try:
+                            # 建立 Stop Order (觸價單)
+                            # 參考：https://shioaji.github.io/Shioaji/api.html#order
+                            stop_order = shioaji.Order(
+                            price=stop_price,      # 觸發價格
+                            quantity=lots,
+                            action=stop_action,
+                            price_type="LMT",      # 觸發後轉為限價單
+                            order_type="STP",      # 指定為 Stop Order
+                            order_cond=sj.OrderCond.Futures  # 期貨單
+                            )
+
+                            # 送出訂單
+                            stop_trade = shioaji.place_order(contract, stop_order)
+                            if stop_order:
+                                console.print(f"[green]✓ 停損觸價單已設定：{stop_price:.0f}[/green]")
+                        except Exception as e:
+                            console.print(f"[yellow]⚠️ 停損觸價單設定失敗：{e}[/yellow]")
+                            console.print(f"[yellow]  將使用程式監控停損[/yellow]")
+                    
+                    result = f"Order placed: {action} {lots} @ {price:.0f}"
+                    if stop_loss:
+                        result += f" (SL: {stop_loss:.0f})"
+                else:
+                    console.print(f"[red]✗ 下單失敗[/red]")
+            except Exception as e:
+                console.print(f"[red]✗ 下單錯誤：{e}[/red]")
+    else:
+        # PAPER 模式：使用 PaperTrader
+        result = trader.execute_signal(
+            signal, price, ts, lots=lots,
+            max_lots=2,
+            stop_loss=stop_loss,
+            break_even_trigger=break_even_trigger,
+        )
+    
+    # 顯示交易結果
     if result:
         direction = "🟢 BUY" if signal == "BUY" else "🔴 SELL" if signal == "SELL" else "⚪ EXIT"
         pnl_text = ""
+        pnl_value = 0
         if "PnL" in result:
-            pnl_text = f"PnL: {result.split('PnL: ')[-1]}"
+            try:
+                pnl_value = float(result.split("PnL: ")[-1].replace(",", ""))
+                pnl_text = f"PnL: {pnl_value:+,.0f}"
+            except:
+                pass
         
-        console.print(f"[bold {'green' if 'PnL' not in result or float(result.split('PnL: ')[-1].replace(',', '')) > 0 else 'red'}]"
-                     f"{direction} @ {price:.0f} | {pnl_text}[/bold {'green' if 'PnL' not in result or float(result.split('PnL: ')[-1].replace(',', '')) > 0 else 'red'}]")
+        # 正確判斷顏色
+        if pnl_value > 0:
+            color = "green"
+        elif pnl_value < 0:
+            color = "red"
+        else:
+            color = "white"
+        
+        console.print(f"[bold {color}]{direction} @ {price:.0f} | {pnl_text}[/bold {color}]")
 
+
+def check_force_close(current_time, trader, shioaji, contract):
+    """
+    13:45 強制平倉檢查
+    避免微台指跳空開盤風險
+    """
+    if current_time.hour == FORCE_CLOSE_HOUR and current_time.minute >= FORCE_CLOSE_MINUTE:
+        if trader.position != 0:
+            console.print(f"[yellow]⏰ 收盤時間到，強制平倉...[/yellow]")
+            action = "Sell" if trader.position > 0 else "Buy"
+            
+            # 市價平倉
+            close_order = sj.Order(
+                price=0,  # 市價
+                quantity=abs(trader.position),
+                action=sj.constant.Action.Sell if action == "Sell" else sj.constant.Action.Buy,
+                price_type=sj.constant.FuturesPriceType.MKT,
+                order_type=sj.constant.OrderType.ROD,
+                account=shioaji.futopt_account
+            )
+            
+            shioaji.place_order(contract, close_order)
+            console.print(f"[green]✓ 已強制平倉 {abs(trader.position)} 口[/green]")
+            return True
+    return False
 
 if __name__ == "__main__":
     run_night_trading("TMF")

@@ -1,112 +1,69 @@
-# 🌙 夜盤交易策略配置 (優化版)
-# 優化重點：
-# - 統一進場門檻 (與日盤相同)
-# - 改用範圍市場單 (減少滑價)
-# - 優化 TSM 確認參數
-# - 加快輪詢速度
-
-# 實戰總開關
-live_trading: false
-
-# 1. 策略核心參數
+execution:
+  broker_fee_per_side: 20.0
+  exchange_fee_per_side: 0.0
+  initial_balance: 100000
+  limit_offset_pts: 2.0
+  market_slippage_pts: 3.0
+  order_type: range_market
+  range_protection_pts: 5.0
+  tax_rate: 2.0e-05
+  tick_size: 1.0
+live_trading: true
+monitoring:
+  callback:
+    buffer_size: 100
+    health_check_secs: 60
+    use_tick_data: false
+  data_mode: hybrid
+  pb_confirmation_bars: 12
+  poll_interval_secs: 30
+risk_mgmt:
+  break_even_pts: 50
+  exit_on_vwap: false
+  ma_stop:
+    length: 20
+    multiplier: 1.0
+    ticks: 15
+    type: below
+  stop_loss_pts: 60
+  time_filter:
+    enabled: true
+    max_holding_mins: 120
+    skip_hours: []
+  trailing_stop:
+    distance_pts: 30
+    enabled: true
+    trigger_pts: 60
 strategy:
+  entry_score: 20
   length: 20
-  entry_score: 20            # 【優化】統一與日盤相同 (回測最佳)
-  use_squeeze: true
-  use_pullback: true
-  regime_filter: "loose"
-  
-  # TSM 確認參數
-  tsm_confirmation: true
-  tsm_min_confidence: 0.7    # 【優化】提高信心度門檻
-  tsm_correlation_threshold: 0.7
-  tsm_timeframe: "15m"
-
+  partial_exit:
+    enabled: true
+    tp1_lots: 1
+    tp1_pts: 50
   pullback:
+    buffer: 1.002
     ema_fast: 20
     ema_slow: 60
     lookback: 60
-    buffer: 1.002
-
-  partial_exit:
-    enabled: true
-    tp1_pts: 50              # 【優化】統一與日盤相同
-    tp1_lots: 1
-
+  tsm_confirmation: false
+  tsm_correlation_threshold: 0.7
+  tsm_min_confidence: 0.5
+  tsm_timeframe: 15m
   weights:
-    "1h": 0.3
-    "15m": 0.5
-    "5m": 0.2
-
-# 2. 部位管理
+    15m: 0.5
+    1h: 0.3
+    5m: 0.2
 trade_mgmt:
-  lots_per_trade: 1
-  max_positions: 1           # 【優化】單一部位 (降低風險)
   allow_long: true
   allow_short: true
   force_close_at_end: true
-
-# 3. 風險控管
-risk_mgmt:
-  ma_stop:
-    type: "below"
-    length: 20
-    ticks: 15
-    multiplier: 1.0
-
-  stop_loss_pts: 60          # 【優化】回測最佳
-  break_even_pts: 50
-  exit_on_vwap: false
-
-  trailing_stop:
-    enabled: true
-    trigger_pts: 60          # 【優化】統一與日盤相同
-    distance_pts: 30
-
-  time_filter:
-    enabled: true
-    skip_hours: []
-    max_holding_mins: 120
-
-# 4. TSM 數據配置
+  lots_per_trade: 1
+  max_positions: 1
 tsm_config:
-  enabled: true
-  ticker: "TSM"
-  period: "5d"
-  interval: "5m"
-  min_confidence: 0.7
-  check_correlation: true
-
-# 5. 執行與訂單類型 【重點優化】
-execution:
-  # 【優化】改用範圍市場單，減少夜盤滑價
-  order_type: "range_market"
-  
-  tick_size: 1.0
-  
-  # 夜盤滑價設定
-  market_slippage_pts: 3.0   # 【優化】夜盤波動大，提高滑價
-  
-  # 範圍市場單保護
-  range_protection_pts: 5.0  # 價格保護範圍
-  
-  # 限價單設定 (如果使用 limit)
-  limit_offset_pts: 2.0      # 掛單偏移
-  
-  # 交易成本
-  broker_fee_per_side: 20.0
-  exchange_fee_per_side: 0.0
-  tax_rate: 0.00002
-  initial_balance: 100000
-
-# 6. 監控設定
-monitoring:
-  data_mode: "hybrid"
-  poll_interval_secs: 30     # 【優化】加快輪詢
-  
-  pb_confirmation_bars: 12
-  
-  callback:
-    use_tick_data: false
-    buffer_size: 100
-    health_check_secs: 60
+  check_correlation: false
+  enabled: false
+  interval: 5m
+  min_confidence: 0.5
+  period: 5d
+  ticker: TSM

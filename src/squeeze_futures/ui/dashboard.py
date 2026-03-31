@@ -10,11 +10,21 @@ Squeeze Futures 即時交易儀表板
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yaml
+from pathlib import Path
+
+# 嘗試載入 Shioaji
+try:
+    import shioaji as sj
+    HAS_SHIOAJI = True
+except:
+    HAS_SHIOAJI = False
 from datetime import datetime, timedelta
 from pathlib import Path
 import time
 import re
 import os
+import yaml
 
 # 頁面配置
 st.set_page_config(
@@ -130,7 +140,20 @@ def parse_trade_log(date: str = None):
 
 
 def calculate_metrics(trades_df: pd.DataFrame):
-    """計算績效指標"""
+    """計算績效指標 - LIVE TRADING 只顯示實際權益"""
+    # 統一使用 display_initial 變數
+    display_initial = 40000  # 預設值
+    
+    # 讀取配置
+    try:
+        config_file = Path("config/trade_config.yaml")
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                display_initial = config.get('execution', {}).get('initial_balance', 40000)
+    except:
+        pass
+    
     if trades_df is None or trades_df.empty:
         return {
             'total_pnl': 0,
@@ -141,6 +164,8 @@ def calculate_metrics(trades_df: pd.DataFrame):
             'profit_factor': 0,
             'winning_trades': 0,
             'losing_trades': 0,
+            'initial_balance': display_initial,
+            'current_equity': display_initial,
         }
     
     exits = trades_df[trades_df['type'].isin(['EXIT', 'PARTIAL'])]
@@ -155,6 +180,8 @@ def calculate_metrics(trades_df: pd.DataFrame):
             'profit_factor': 0,
             'winning_trades': 0,
             'losing_trades': 0,
+            'initial_balance': display_initial,
+            'current_equity': display_initial,
         }
     
     total_pnl = exits['pnl'].sum()
@@ -178,8 +205,21 @@ def calculate_metrics(trades_df: pd.DataFrame):
         'profit_factor': profit_factor,
         'winning_trades': len(winning),
         'losing_trades': len(losing),
+        'initial_balance': display_initial,
+        'current_equity': display_initial + total_pnl,
     }
 
+
+# 讀取交易模式 (在側邊欄之前定義)
+is_live = False
+try:
+    config_file = Path("config/trade_config.yaml")
+    if config_file.exists():
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+            is_live = config.get('live_trading', False)
+except:
+    pass
 
 # 側邊欄
 with st.sidebar:
@@ -250,6 +290,57 @@ with st.sidebar:
     
     st.divider()
     
+    # 重置功能 (僅 PAPER TRADING 顯示)
+    if not is_live:
+        st.subheader("🔄 系統重置 (PAPER 模式)")
+        
+        # 期初資金輸入
+        new_initial = st.number_input(
+            "期初資金 (TWD)",
+            min_value=10000,
+            max_value=10000000,
+            value=40000,
+            step=10000,
+            help="LIVE TRADING 模式不顯示此功能"
+        )
+        
+        # 重置按鈕
+        if st.button("🗑️ 清空記錄"):
+            from datetime import datetime
+            today = datetime.now().strftime("%Y%m%d")
+            
+            # 清空檔案
+            files = [
+                f"logs/market_data/TMF_{today}_indicators.csv",
+                f"exports/trades/TMF_{today}_trades.json",
+                f"exports/trades/TMF_{today}_trades.csv",
+            ]
+            for f in files:
+                try:
+                    Path(f).unlink(missing_ok=True)
+                except:
+                    pass
+            
+            # 清空日誌
+            try:
+                with open("logs/automation.log", 'r') as f:
+                    lines = f.readlines()
+                with open("logs/automation.log", 'w') as f:
+                    for line in lines:
+                        if today not in line:
+                            f.write(line)
+            except:
+                pass
+            
+            st.success("✅ 已清空！請按 F5 刷新頁面")
+            st.cache_data.clear()
+        
+        st.info("ℹ️ LIVE TRADING 模式不顯示重置功能")
+        st.divider()
+    else:
+        st.divider()
+        st.success("✅ LIVE TRADING 模式 - 使用實際帳戶權益")
+    
     # 快速連結
     st.subheader("🔗 快速連結")
     st.markdown("""
@@ -262,6 +353,16 @@ with st.sidebar:
 
 # 主標題
 st.title("📊 Squeeze Futures 即時交易儀表板")
+live_mode = False
+try:
+    config = yaml.safe_load(Path("config/trade_config.yaml").open())
+    live_mode = config.get('live_trading', False)
+except:
+    pass
+if live_mode:
+    st.success("✅ 實際交易模式")
+else:
+    st.warning("⚠️ 模擬交易模式")
 st.markdown(f"**交易日期**: {selected_date.strftime('%Y-%m-%d')} | **更新時間**: {datetime.now().strftime('%H:%M:%S')}")
 
 st.divider()
@@ -397,11 +498,33 @@ with col2:
     # 績效統計
     st.subheader("💰 績效統計")
     
+    # 顯示期初資金和實際權益 (LIVE TRADING)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(
+            label="期初資金",
+            value=f"{metrics.get('initial_balance', 0):,.0f} TWD",
+            delta=None
+        )
+    with col2:
+        current = metrics.get('current_equity', metrics.get('initial_balance', 0))
+        pnl = metrics.get('total_pnl', 0)
+        st.metric(
+            label="實際帳戶權益",
+            value=f"{current:,.0f} TWD",
+            delta=f"{pnl:+,.0f} TWD" if pnl != 0 else None
+        )
+    
+    st.divider()
+    
     if metrics['total_trades'] > 0:
-        st.write(f"**獲利次數**: {metrics['winning_trades'] if 'winning_trades' in metrics else len(trades_df[trades_df['pnl'] > 0])}")
-        st.write(f"**虧損次數**: {metrics['losing_trades'] if 'losing_trades' in metrics else len(trades_df[trades_df['pnl'] < 0])}")
-        st.write(f"**平均獲利**: {metrics['avg_win']:+,.0f} TWD")
-        st.write(f"**平均虧損**: {metrics['avg_loss']:+,.0f} TWD")
+        col3, col4 = st.columns(2)
+        with col3:
+            st.write(f"**獲利次數**: {metrics.get('winning_trades', 0)}")
+            st.write(f"**平均獲利**: {metrics.get('avg_win', 0):+,.0f} TWD")
+        with col4:
+            st.write(f"**虧損次數**: {metrics.get('losing_trades', 0)}")
+            st.write(f"**平均虧損**: {metrics.get('avg_loss', 0):+,.0f} TWD")
     else:
         st.info("今日尚無交易")
 
