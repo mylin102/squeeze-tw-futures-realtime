@@ -327,7 +327,11 @@
       "Bash(old_main_check *)",
       "Bash(new_main_check *)",
       "Bash(old_header *)",
-      "Bash(new_header *)"
+      "Bash(new_header *)",
+      "Bash(old_contract_search *)",
+      "Bash(new_contract_search *)",
+      "Bash(old_wrong *)",
+      "Bash(new_correct *)"
     ]
   },
   "$version": 3
