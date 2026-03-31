@@ -22,6 +22,8 @@ dependencies = [
     "numba>=0.61.2",
     "lxml>=6.0.2",
     "html5lib>=1.1",
+    "streamlit>=1.55.0",
+    "plotly>=6.6.0",
 ]
 
 [project.scripts]

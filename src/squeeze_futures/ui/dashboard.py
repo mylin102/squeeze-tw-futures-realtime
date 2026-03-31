@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""
+Squeeze Futures 即時交易儀表板
+使用 Streamlit 建立即時更新的監控介面
+
+執行：
+  streamlit run src/squeeze_futures/ui/dashboard.py
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from pathlib import Path
+import time
+import re
+
+# 頁面配置
+st.set_page_config(
+    page_title="Squeeze Futures 交易監控",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# 樣式
+st.markdown("""
+<style>
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 20px;
+    }
+    .profit { color: #00cc00; font-weight: bold; }
+    .loss { color: #ff0000; font-weight: bold; }
+    .neutral { color: #666666; }
+</style>
+""", unsafe_allow_html=True)
+
+# 路徑設定
+LOG_FILE = Path("logs/automation.log")
+MARKET_DIR = Path("logs/market_data")
+BACKTEST_DIR = Path("data/backtest")
+
+
+# 快取函數
+@st.cache_data(ttl=5)
+def load_market_data(date: str = None):
+    """載入市場數據"""
+    if date is None:
+        date = datetime.now().strftime("%Y%m%d")
+    
+    pattern = f"TMF_{date}*.csv"
+    files = list(MARKET_DIR.glob(pattern))
+    
+    if not files:
+        return None
+    
+    try:
+        latest_file = max(files, key=os.path.getmtime)
+        df = pd.read_csv(latest_file, index_col=0, parse_dates=True)
+        df = df.sort_index()
+        return df
+    except Exception as e:
+        st.error(f"載入數據失敗：{e}")
+        return None
+
+
+@st.cache_data(ttl=5)
+def parse_trade_log(date: str = None):
+    """解析交易日誌"""
+    if date is None:
+        date = datetime.now().strftime("%Y-%m-%d")
+    
+    trades = []
+    if LOG_FILE.exists():
+        with open(LOG_FILE, 'r') as f:
+            for line in f:
+                if date in line and ('EXIT' in line or 'BUY' in line or 'SELL' in line):
+                    try:
+                        time_part = line.split(']')[0].replace('[', '')
+                        
+                        if 'PARTIAL_EXIT' in line:
+                            trade_type = 'PARTIAL'
+                        elif 'EXIT' in line:
+                            trade_type = 'EXIT'
+                        elif 'BUY' in line:
+                            trade_type = 'BUY'
+                        elif 'SELL' in line:
+                            trade_type = 'SELL'
+                        else:
+                            continue
+                        
+                        price_match = re.search(r'at ([\d.]+)', line)
+                        pnl_match = re.search(r'PnL: ([\d,-]+)', line)
+                        
+                        price = float(price_match.group(1)) if price_match else 0
+                        pnl = float(pnl_match.group(1).replace(',', '')) if pnl_match else 0
+                        
+                        trades.append({
+                            'timestamp': time_part,
+                            'type': trade_type,
+                            'price': price,
+                            'pnl': pnl,
+                        })
+                    except:
+                        pass
+    
+    return pd.DataFrame(trades) if trades else pd.DataFrame()
+
+
+def calculate_metrics(trades_df: pd.DataFrame):
+    """計算績效指標"""
+    if trades_df.empty:
+        return {
+            'total_pnl': 0,
+            'total_trades': 0,
+            'win_rate': 0,
+            'avg_win': 0,
+            'avg_loss': 0,
+            'profit_factor': 0,
+        }
+    
+    exits = trades_df[trades_df['type'].isin(['EXIT', 'PARTIAL'])]
+    
+    if exits.empty:
+        return {
+            'total_pnl': 0,
+            'total_trades': 0,
+            'win_rate': 0,
+            'avg_win': 0,
+            'avg_loss': 0,
+            'profit_factor': 0,
+        }
+    
+    total_pnl = exits['pnl'].sum()
+    winning = exits[exits['pnl'] > 0]
+    losing = exits[exits['pnl'] < 0]
+    
+    win_rate = len(winning) / len(exits) * 100 if len(exits) > 0 else 0
+    avg_win = winning['pnl'].mean() if len(winning) > 0 else 0
+    avg_loss = abs(losing['pnl'].mean()) if len(losing) > 0 else 0
+    
+    gross_profit = winning['pnl'].sum() if len(winning) > 0 else 0
+    gross_loss = abs(losing['pnl'].sum()) if len(losing) > 0 else 0
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0
+    
+    return {
+        'total_pnl': total_pnl,
+        'total_trades': len(exits),
+        'win_rate': win_rate,
+        'avg_win': avg_win,
+        'avg_loss': avg_loss,
+        'profit_factor': profit_factor,
+    }
+
+
+# 側邊欄
+with st.sidebar:
+    st.header("⚙️ 設定")
+    
+    # 日期選擇
+    selected_date = st.date_input(
+        "交易日期",
+        value=datetime.now(),
+        format="YYYY-MM-DD"
+    )
+    
+    # 自動更新
+    auto_refresh = st.checkbox("自動更新", value=True)
+    refresh_interval = st.slider("更新間隔 (秒)", 5, 60, 10)
+    
+    # 手動刷新
+    if st.button("🔄 立即刷新"):
+        st.cache_data.clear()
+    
+    st.divider()
+    
+    # 快速連結
+    st.subheader("🔗 快速連結")
+    st.markdown("""
+    - [📊 市場數據](#market-data)
+    - [📈 持倉狀態](#position)
+    - [💰 績效統計](#performance)
+    - [📝 交易記錄](#trades)
+    """)
+
+
+# 主標題
+st.title("📊 Squeeze Futures 即時交易儀表板")
+st.markdown(f"**交易日期**: {selected_date.strftime('%Y-%m-%d')} | **更新時間**: {datetime.now().strftime('%H:%M:%S')}")
+
+st.divider()
+
+# 載入數據
+date_str = selected_date.strftime("%Y%m%d")
+market_df = load_market_data(date_str)
+trades_df = parse_trade_log(date_str)
+metrics = calculate_metrics(trades_df)
+
+# 第一列：關鍵指標
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    pnl_color = "profit" if metrics['total_pnl'] > 0 else "loss" if metrics['total_pnl'] < 0 else "neutral"
+    st.metric(
+        label="💰 總 PnL (TWD)",
+        value=f"{metrics['total_pnl']:+,.0f}",
+        delta=None,
+    )
+
+with col2:
+    st.metric(
+        label="📊 交易次數",
+        value=metrics['total_trades'],
+        delta=None,
+    )
+
+with col3:
+    win_delta = f"{metrics['win_rate']:.1f}%" if metrics['total_trades'] > 0 else "0%"
+    st.metric(
+        label="🎯 勝率",
+        value=win_delta,
+        delta=None,
+    )
+
+with col4:
+    pf_delta = f"{metrics['profit_factor']:.2f}" if metrics['profit_factor'] > 0 else "0.00"
+    st.metric(
+        label="📈 盈虧比",
+        value=pf_delta,
+        delta=None,
+    )
+
+st.divider()
+
+# 第二列：市場數據和持倉
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📊 市場數據")
+    
+    if market_df is not None and not market_df.empty:
+        latest = market_df.iloc[-1]
+        
+        # 關鍵數據
+        c1, c2, c3 = st.columns(3)
+        c1.metric("價格", f"{latest.get('close', 0):.0f}")
+        c2.metric("VWAP", f"{latest.get('vwap', latest.get('close', 0)):.0f}")
+        c3.metric("Score", f"{latest.get('score', 0):+.1f}")
+        
+        # Squeeze 狀態
+        sqz_on = latest.get('sqz_on', False)
+        mom_state = latest.get('mom_state', 0)
+        
+        if sqz_on:
+            st.info("⏸️ Squeeze: **ON** (壓縮中)")
+        else:
+            st.success("▶️ Squeeze: **OFF** (釋放中)")
+        
+        st.write(f"**動能狀態**: {mom_state}")
+        
+        # 價格走勢圖
+        if len(market_df) > 1:
+            fig = {
+                "data": [
+                    {"x": market_df.index.tolist(), "y": market_df['close'].tolist(), "type": "scatter", "name": "Close"},
+                    {"x": market_df.index.tolist(), "y": market_df.get('vwap', market_df['close']).tolist(), "type": "scatter", "name": "VWAP", "line": {"dash": "dash"}},
+                ],
+                "layout": {"title": "價格走勢", "xaxis": {"title": "時間"}, "yaxis": {"title": "價格"}}
+            }
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Score 走勢
+        if 'score' in market_df.columns:
+            fig = {
+                "data": [
+                    {"x": market_df.index.tolist(), "y": market_df['score'].tolist(), "type": "scatter", "name": "Score"},
+                ],
+                "layout": {
+                    "title": "MTF Score",
+                    "xaxis": {"title": "時間"},
+                    "yaxis": {"title": "Score"},
+                    "shapes": [
+                        {"type": "line", "x0": market_df.index[0], "y0": 50, "x1": market_df.index[-1], "y1": 50, "line": {"color": "green", "dash": "dash"}},
+                        {"type": "line", "x0": market_df.index[0], "y0": -50, "x1": market_df.index[-1], "y1": -50, "line": {"color": "red", "dash": "dash"}},
+                    ]
+                }
+            }
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("⚠️ 暫無市場數據")
+
+with col2:
+    st.subheader("📝 持倉狀態")
+    
+    if not trades_df.empty:
+        # 查找最新進場和平倉
+        buys = trades_df[trades_df['type'] == 'BUY']
+        exits = trades_df[trades_df['type'].isin(['EXIT', 'PARTIAL'])]
+        
+        if not buys.empty and not exits.empty:
+            last_buy_time = buys.iloc[-1]['timestamp']
+            last_exit_time = exits.iloc[-1]['timestamp']
+            
+            if last_exit_time > last_buy_time:
+                st.success("✅ 目前無持倉")
+            else:
+                st.warning("🟡 持有部位中...")
+                st.write(f"**進場時間**: {last_buy_time}")
+                st.write(f"**進場價格**: {buys.iloc[-1]['price']:.0f}")
+        elif not buys.empty:
+            st.warning("🟡 持有部位中...")
+            st.write(f"**進場時間**: {buys.iloc[-1]['timestamp']}")
+            st.write(f"**進場價格**: {buys.iloc[-1]['price']:.0f}")
+        else:
+            st.success("✅ 目前無持倉")
+    else:
+        st.success("✅ 目前無持倉")
+    
+    st.divider()
+    
+    # 績效統計
+    st.subheader("💰 績效統計")
+    
+    if metrics['total_trades'] > 0:
+        st.write(f"**獲利次數**: {metrics['winning_trades'] if 'winning_trades' in metrics else len(trades_df[trades_df['pnl'] > 0])}")
+        st.write(f"**虧損次數**: {metrics['losing_trades'] if 'losing_trades' in metrics else len(trades_df[trades_df['pnl'] < 0])}")
+        st.write(f"**平均獲利**: {metrics['avg_win']:+,.0f} TWD")
+        st.write(f"**平均虧損**: {metrics['avg_loss']:+,.0f} TWD")
+    else:
+        st.info("今日尚無交易")
+
+st.divider()
+
+# 第三列：交易記錄
+st.subheader("📝 交易記錄")
+
+if not trades_df.empty:
+    # 格式化顯示
+    display_df = trades_df.copy()
+    display_df['pnl_display'] = display_df['pnl'].apply(lambda x: f"{x:+,.0f}")
+    display_df['type_display'] = display_df['type'].apply(
+        lambda x: "🟢 BUY" if x == 'BUY' else "🔴 SELL" if x == 'SELL' else "⚪ EXIT" if x == 'EXIT' else "⚪ PARTIAL"
+    )
+    
+    st.dataframe(
+        display_df[['timestamp', 'type_display', 'price', 'pnl_display']],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "timestamp": "時間",
+            "type_display": "類型",
+            "price": "價格",
+            "pnl_display": "PnL",
+        }
+    )
+else:
+    st.info("今日尚無交易記錄")
+
+# 自動刷新
+if auto_refresh:
+    time.sleep(refresh_interval)
+    st.rerun()

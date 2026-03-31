@@ -29,7 +29,10 @@
       "Bash(chmod *)",
       "Bash(tee *)",
       "Bash(python3 *)",
-      "Bash(crontab *)"
+      "Bash(crontab *)",
+      "Bash(timeout *)",
+      "Bash(true)",
+      "Bash(curl *)"
     ]
   },
   "$version": 3
