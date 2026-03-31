@@ -1,5 +1,6 @@
 import os
 import sys
+import pytest
 from rich.console import Console
 from rich.table import Table
 from dotenv import load_dotenv
@@ -9,10 +10,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from squeeze_futures.data.shioaji_client import ShioajiClient
 
+pytestmark = [pytest.mark.live, pytest.mark.manual]
+
 console = Console()
 load_dotenv()
 
 def test_live_preparation():
+    if os.getenv("RUN_SHIOAJI_LIVE") != "1":
+        pytest.skip("Set RUN_SHIOAJI_LIVE=1 to run manual live Shioaji checks.")
+
     client = ShioajiClient()
     
     console.print("[bold cyan]=== Shioaji Live Trading Preparation Test ===[/bold cyan]\n")

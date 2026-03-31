@@ -14,6 +14,11 @@ import sys
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
+import time
+
+import pandas as pd
+import pytest
 
 # Add src to path for local development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -24,43 +29,26 @@ from squeeze_futures.export.csv_exporter import CSVExporter
 from squeeze_futures.analysis.performance import PerformanceAnalyzer
 
 
-def test_database_initialization():
-    """測試 1: 資料庫初始化"""
-    print("\n" + "="*60)
-    print("測試 1: 資料庫初始化")
-    print("="*60)
-    
-    db_path = "data/test_trading.db"
-    db = DatabaseManager(db_path)
-    
-    # 驗證表格存在
-    with db._get_connection() as conn:
-        tables = conn.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name IN ('trades', 'equity_snapshots', 'system_logs')
-        """).fetchall()
-    
-    assert len(tables) == 3, f"Expected 3 tables, got {len(tables)}"
-    print(f"✅ 資料庫初始化成功：{db_path}")
-    print(f"✅ 表格數量：{len(tables)}")
-    
-    return db
+@pytest.fixture
+def integration_workspace(tmp_path):
+    return _create_integration_workspace(tmp_path)
 
 
-def test_trade_recording():
-    """測試 2: 交易記錄"""
-    print("\n" + "="*60)
-    print("測試 2: 交易記錄")
-    print("="*60)
-    
-    db_path = "data/test_trading.db"
-    db = DatabaseManager(db_path)
-    
-    # 記錄一筆完整交易
+def _create_integration_workspace(base_path: Path):
+    export_dir = base_path / "exports"
+    export_dir.mkdir()
+    return {
+        "trading_db": base_path / "test_trading.db",
+        "paper_db": base_path / "test_papertrader.db",
+        "snapshot_db": base_path / "test_snapshot.db",
+        "export_dir": export_dir,
+        "report_path": export_dir / "test_performance_report.md",
+    }
+
+
+def _record_sample_trade(db: DatabaseManager) -> None:
     entry_time = datetime.now()
     exit_time = entry_time + timedelta(minutes=10)
-    
-    # ENTRY 記錄
     db.record_trade({
         'ticker': 'TMF',
         'direction': 'LONG',
@@ -71,8 +59,6 @@ def test_trade_recording():
         'pnl_cash': 0,
         'entry_score': 75,
     })
-    
-    # EXIT 記錄
     db.record_trade({
         'ticker': 'TMF',
         'direction': 'LONG',
@@ -91,6 +77,50 @@ def test_trade_recording():
         'pnl_cash': 1904,
         'exit_reason': 'TP1 hit',
     })
+
+
+def _build_completed_paper_trader(db_path) -> PaperTrader:
+    trader = PaperTrader(
+        ticker="TMF",
+        initial_balance=100000,
+        db_path=str(db_path),
+        snapshot_interval=60,
+    )
+    now = datetime.now()
+    trader.execute_signal("BUY", 20000, now, lots=2)
+    trader.execute_signal("EXIT", 20100, now + timedelta(minutes=10), lots=2)
+    return trader
+
+
+def test_database_initialization(integration_workspace):
+    """測試 1: 資料庫初始化"""
+    print("\n" + "="*60)
+    print("測試 1: 資料庫初始化")
+    print("="*60)
+    
+    db_path = integration_workspace["trading_db"]
+    db = DatabaseManager(db_path)
+    
+    # 驗證表格存在
+    with db._get_connection() as conn:
+        tables = conn.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name IN ('trades', 'equity_snapshots', 'system_logs')
+        """).fetchall()
+    
+    assert len(tables) == 3, f"Expected 3 tables, got {len(tables)}"
+    print(f"✅ 資料庫初始化成功：{db_path}")
+    print(f"✅ 表格數量：{len(tables)}")
+    
+def test_trade_recording(integration_workspace):
+    """測試 2: 交易記錄"""
+    print("\n" + "="*60)
+    print("測試 2: 交易記錄")
+    print("="*60)
+    
+    db_path = integration_workspace["trading_db"]
+    db = DatabaseManager(db_path)
+    _record_sample_trade(db)
     
     # 驗證記錄
     trades = db.get_trade_history()
@@ -104,33 +134,14 @@ def test_trade_recording():
     print(f"✅ 總交易數：{len(trades)}")
     print(f"✅ 淨利：{summary['net_profit']}")
     
-    return db
-
-
-def test_papertrader_integration():
+def test_papertrader_integration(integration_workspace):
     """測試 3: PaperTrader 整合"""
     print("\n" + "="*60)
     print("測試 3: PaperTrader 整合")
     print("="*60)
     
-    db_path = "data/test_papertrader.db"
-    
-    # 建立 PaperTrader (帶 SQLite)
-    trader = PaperTrader(
-        ticker="TMF",
-        initial_balance=100000,
-        db_path=db_path,
-        snapshot_interval=60,  # 1 分鐘快照
-    )
-    
-    now = datetime.now()
-    
-    # 執行交易
-    print("執行交易：BUY 2 @ 20000")
-    trader.execute_signal("BUY", 20000, now, lots=2)
-    
-    print("執行交易：EXIT 2 @ 20100")
-    trader.execute_signal("EXIT", 20100, now + timedelta(minutes=10), lots=2)
+    db_path = integration_workspace["paper_db"]
+    trader = _build_completed_paper_trader(db_path)
     
     # 驗證記憶體記錄
     assert len(trader.trades) == 1, f"Expected 1 trade in memory, got {len(trader.trades)}"
@@ -148,21 +159,18 @@ def test_papertrader_integration():
     print(f"✅ 資料庫交易數：{len(db_trades)}")
     print(f"✅ 淨利：{summary.get('net_profit', 0)}")
     
-    return trader
-
-
-def test_equity_snapshot():
+def test_equity_snapshot(integration_workspace):
     """測試 4: 權益快照"""
     print("\n" + "="*60)
     print("測試 4: 權益快照")
     print("="*60)
     
-    db_path = "data/test_snapshot.db"
+    db_path = integration_workspace["snapshot_db"]
     
     trader = PaperTrader(
         ticker="TMF",
         initial_balance=100000,
-        db_path=db_path,
+        db_path=str(db_path),
         snapshot_interval=1,  # 1 秒快照 (測試用)
     )
     
@@ -172,7 +180,6 @@ def test_equity_snapshot():
     trader.execute_signal("BUY", 20000, now, lots=2)
     
     # 模擬時間流逝，觸發快照
-    import time
     for i in range(3):
         future_time = now + timedelta(seconds=i+1)
         trader._maybe_save_snapshot(future_time, 20000 + i*10)
@@ -185,25 +192,23 @@ def test_equity_snapshot():
     print(f"✅ 權益快照成功")
     print(f"✅ 快照數量：{len(equity_curve)}")
     
-    return trader
-
-
-def test_csv_export():
+def test_csv_export(integration_workspace):
     """測試 5: CSV 匯出"""
     print("\n" + "="*60)
     print("測試 5: CSV 匯出")
     print("="*60)
     
-    db_path = "data/test_trading.db"
+    db_path = integration_workspace["trading_db"]
+    db = DatabaseManager(db_path)
+    _record_sample_trade(db)
     
-    exporter = CSVExporter(db_path, "exports/test_trades")
+    exporter = CSVExporter(str(db_path), str(integration_workspace["export_dir"]))
     
     # 匯出所有交易
     output_path = exporter.export_all_trades()
     assert os.path.exists(output_path), f"CSV file not created: {output_path}"
     
     # 驗證 CSV 內容
-    import pandas as pd
     df = pd.read_csv(output_path)
     assert len(df) > 0, f"CSV file is empty: {output_path}"
     
@@ -211,18 +216,16 @@ def test_csv_export():
     print(f"✅ 檔案路徑：{output_path}")
     print(f"✅ 記錄數：{len(df)}")
     
-    return output_path
-
-
-def test_performance_analysis():
+def test_performance_analysis(integration_workspace):
     """測試 6: 績效分析"""
     print("\n" + "="*60)
     print("測試 6: 績效分析")
     print("="*60)
     
-    db_path = "data/test_papertrader.db"
+    db_path = integration_workspace["paper_db"]
+    _build_completed_paper_trader(db_path)
     
-    analyzer = PerformanceAnalyzer(db_path)
+    analyzer = PerformanceAnalyzer(str(db_path))
     analyzer.load_trades()
     
     stats = analyzer.get_trade_statistics()
@@ -233,46 +236,46 @@ def test_performance_analysis():
     print(f"✅ 盈虧比：{stats.get('profit_factor', 0):.2f}")
     
     # 產生報告
-    report_path = "exports/test_performance_report.md"
+    report_path = str(integration_workspace["report_path"])
     report = analyzer.generate_report(report_path)
+    assert Path(report_path).exists(), f"Report not created: {report_path}"
     
     print(f"✅ 報告已儲存：{report_path}")
     
-    return report
-
-
 def main():
     """執行所有測試"""
     print("\n" + "="*60)
     print("🧪 SQLite Persistence Integration Tests")
     print("="*60)
-    
-    tests = [
-        ("資料庫初始化", test_database_initialization),
-        ("交易記錄", test_trade_recording),
-        ("PaperTrader 整合", test_papertrader_integration),
-        ("權益快照", test_equity_snapshot),
-        ("CSV 匯出", test_csv_export),
-        ("績效分析", test_performance_analysis),
-    ]
-    
-    passed = 0
-    failed = 0
-    results = []
-    
-    for name, test_func in tests:
-        try:
-            result = test_func()
-            results.append((name, "✅ PASS", result))
-            passed += 1
-        except AssertionError as e:
-            results.append((name, f"❌ FAIL: {str(e)}", None))
-            failed += 1
-            print(f"❌ {name} 失敗：{str(e)}")
-        except Exception as e:
-            results.append((name, f"❌ ERROR: {str(e)}", None))
-            failed += 1
-            print(f"❌ {name} 錯誤：{str(e)}")
+
+    with TemporaryDirectory() as tmp_dir:
+        workspace = _create_integration_workspace(Path(tmp_dir))
+        tests = [
+            ("資料庫初始化", lambda: test_database_initialization(workspace)),
+            ("交易記錄", lambda: test_trade_recording(workspace)),
+            ("PaperTrader 整合", lambda: test_papertrader_integration(workspace)),
+            ("權益快照", lambda: test_equity_snapshot(workspace)),
+            ("CSV 匯出", lambda: test_csv_export(workspace)),
+            ("績效分析", lambda: test_performance_analysis(workspace)),
+        ]
+
+        passed = 0
+        failed = 0
+        results = []
+
+        for name, test_func in tests:
+            try:
+                result = test_func()
+                results.append((name, "✅ PASS", result))
+                passed += 1
+            except AssertionError as e:
+                results.append((name, f"❌ FAIL: {str(e)}", None))
+                failed += 1
+                print(f"❌ {name} 失敗：{str(e)}")
+            except Exception as e:
+                results.append((name, f"❌ ERROR: {str(e)}", None))
+                failed += 1
+                print(f"❌ {name} 錯誤：{str(e)}")
     
     # 總結
     print("\n" + "="*60)

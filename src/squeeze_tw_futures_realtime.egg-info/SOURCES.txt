@@ -8,6 +8,7 @@ src/squeeze_futures/business/capital_manager.py
 src/squeeze_futures/business/performance_optimizer.py
 src/squeeze_futures/business/risk_manager.py
 src/squeeze_futures/business/signal_generator.py
+src/squeeze_futures/data/data_storage.py
 src/squeeze_futures/data/downloader.py
 src/squeeze_futures/data/shioaji_client.py
 src/squeeze_futures/data/tsm_client.py

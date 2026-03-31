@@ -1,5 +1,6 @@
 import os
 import sys
+import pytest
 from rich.console import Console
 from rich.table import Table
 from dotenv import load_dotenv
@@ -7,20 +8,23 @@ from dotenv import load_dotenv
 # Add src to path for local development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-try:
-    import shioaji as sj
-except ImportError:
-    print("Error: shioaji package not installed.")
-    sys.exit(1)
+pytestmark = [pytest.mark.live, pytest.mark.manual]
+
+sj = pytest.importorskip("shioaji")
 
 console = Console()
 load_dotenv()
 
 def test_shioaji():
+    if os.getenv("RUN_SHIOAJI_LIVE") != "1":
+        pytest.skip("Set RUN_SHIOAJI_LIVE=1 to run manual Shioaji API checks.")
+
     api = sj.Shioaji()
     
     api_key = os.getenv("SHIOAJI_API_KEY")
     secret_key = os.getenv("SHIOAJI_SECRET_KEY")
+    if not api_key or not secret_key:
+        pytest.skip("Shioaji credentials are not configured in the environment.")
     
     console.print(f"[bold blue]Testing Shioaji API Login for ID: {api_key}...[/bold blue]")
     

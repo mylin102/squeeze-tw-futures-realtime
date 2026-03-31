@@ -21,3 +21,4 @@ Requires-Dist: lxml>=6.0.2
 Requires-Dist: html5lib>=1.1
 Requires-Dist: streamlit>=1.55.0
 Requires-Dist: plotly>=6.6.0
+Requires-Dist: watchdog>=6.0.0

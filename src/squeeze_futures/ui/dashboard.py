@@ -422,7 +422,7 @@ with col1:
         c1, c2, c3 = st.columns(3)
         c1.metric("價格", f"{latest.get('close', 0):.0f}")
         c2.metric("VWAP", f"{latest.get('vwap', latest.get('close', 0)):.0f}")
-        c3.metric("Score", f"{latest.get('score', 0):+.1f}")
+        c3.metric("Score", str(latest.get("score", "N/A")))
         
         # Squeeze 狀態
         sqz_on = latest.get('sqz_on', False)

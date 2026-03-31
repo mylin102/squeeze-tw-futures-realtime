@@ -24,6 +24,7 @@ dependencies = [
     "html5lib>=1.1",
     "streamlit>=1.55.0",
     "plotly>=6.6.0",
+    "watchdog>=6.0.0",
 ]
 
 [project.scripts]
