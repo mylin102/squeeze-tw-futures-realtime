@@ -208,7 +208,7 @@ class PaperTrader:
             return {}
         return self.db.get_performance_summary(start_date, end_date)
 
-    def execute_signal(self, signal: str, price: float, timestamp: datetime, lots=1, max_lots=1, stop_loss=None, break_even_trigger=None):
+    def execute_signal(self, signal: str, price: float, timestamp: datetime, lots=1, max_lots=1, stop_loss=None, break_even_trigger=None, exit_reason: str = None):
         if signal == "BUY":
             if self.position < max_lots:
                 if self.position < 0: self.execute_signal("EXIT", price, timestamp)
@@ -268,7 +268,8 @@ class PaperTrader:
                 "direction": direction, "entry_price": self.entry_price, "exit_price": price,
                 "lots": lots_to_exit, "pnl_points": pnl_pts, "gross_pnl_cash": pnl_pts * self.point_value * lots_to_exit,
                 "broker_fee": broker_fee, "exchange_fee": exchange_fee, "tax_cost": tax_cost,
-                "total_cost": total_cost, "pnl_cash": pnl_cash, "type": signal
+                "total_cost": total_cost, "pnl_cash": pnl_cash, "type": signal,
+                "exit_reason": exit_reason,
             }
             self.trades.append(trade_record)
             self.balance += pnl_cash

@@ -39,7 +39,7 @@ from trailing_stop import (
 # 行情訂閱管理器 (確保只訂閱一次)
 from quote_subscription import subscribe_once, get_subscription_status
 
-print(f"[dim]移動停損冷卻時間：{UPDATE_COOLDOWN} 秒[/dim]")
+print(f"移動停損冷卻時間：{UPDATE_COOLDOWN} 秒")
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment, calculate_atr
 from squeeze_futures.report.notifier import send_email_notification
 

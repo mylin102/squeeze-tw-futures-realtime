@@ -135,7 +135,7 @@ def run_simulation(ticker="TMF"):
     has_tp1_hit = False
     last_processed_bar = None
 
-    def execute_trade(signal: str, price: float, ts, lots: int, *, stop_loss=None, break_even_trigger=None):
+    def execute_trade(signal: str, price: float, ts, lots: int, *, stop_loss=None, break_even_trigger=None, exit_reason: str = None):
         """
         執行交易並發送通知（僅 LIVE 模式）
         """
@@ -171,6 +171,7 @@ def run_simulation(ticker="TMF"):
             max_lots=MGMT["max_positions"],
             stop_loss=stop_loss,
             break_even_trigger=break_even_trigger,
+            exit_reason=exit_reason,
         )
         
         # 🚀 發送交易通知（僅 LIVE 模式）
@@ -209,9 +210,9 @@ def run_simulation(ticker="TMF"):
 
     def check_stop_loss(ts, market_price: float):
         if trader.position > 0 and trader.current_stop_loss and market_price <= trader.current_stop_loss:
-            return execute_trade("EXIT", trader.current_stop_loss, ts, abs(trader.position))
+            return execute_trade("EXIT", trader.current_stop_loss, ts, abs(trader.position), exit_reason="STOP_LOSS")
         if trader.position < 0 and trader.current_stop_loss and market_price >= trader.current_stop_loss:
-            return execute_trade("EXIT", trader.current_stop_loss, ts, abs(trader.position))
+            return execute_trade("EXIT", trader.current_stop_loss, ts, abs(trader.position), exit_reason="STOP_LOSS")
         return None
 
     def _send_daily_report(trader, ticker, live_mode):
@@ -473,7 +474,7 @@ def run_simulation(ticker="TMF"):
                 if TP['enabled'] and abs(trader.position) == MGMT['lots_per_trade'] and not has_tp1_hit:
                     pnl_pts = (last_price - trader.entry_price) * (1 if trader.position > 0 else -1)
                     if pnl_pts >= TP['tp1_pts']:
-                        msg = execute_trade("PARTIAL_EXIT", last_price, timestamp, TP['tp1_lots'])
+                        msg = execute_trade("PARTIAL_EXIT", last_price, timestamp, TP['tp1_lots'], exit_reason="TP1")
                         if msg:
                             has_tp1_hit = True; trader.current_stop_loss = trader.entry_price
 
@@ -481,7 +482,7 @@ def run_simulation(ticker="TMF"):
                 if not stop_msg and RISK["exit_on_vwap"]:
                     if (trader.position > 0 and last_price < vwap and not last_5m['opening_bullish']) or \
                        (trader.position < 0 and last_price > vwap and not last_5m['opening_bearish']):
-                        stop_msg = execute_trade("EXIT", last_price, timestamp, abs(trader.position))
+                        stop_msg = execute_trade("EXIT", last_price, timestamp, abs(trader.position), exit_reason="VWAP")
                         if stop_msg:
                             stop_msg = "[VWAP] " + stop_msg
                 
@@ -560,49 +561,3 @@ def run_simulation(ticker="TMF"):
 
 if __name__ == "__main__":
     run_simulation("TMF")
-
-
-# ========== 趨勢突破策略整合 ==========
-
-def check_trend_breakout_signal(df_5m: pd.DataFrame, df_15m: pd.DataFrame) -> dict:
-    """
-    檢查趨勢突破信號 (與 Squeeze 結合)
-    
-    進場條件：
-    多頭：
-    - 價格 > 多頭趨勢線
-    - MA20 斜率 > 0.1%
-    - Squeeze 信號符合
-    
-    空頭：
-    - 價格 < 空頭趨勢線
-    - MA20 斜率 < -0.1%
-    - Squeeze 信號符合
-    """
-    from squeeze_futures.engine.trend_breakout import check_trend_breakout
-    
-    result = {
-        'trend_long': False,
-        'trend_short': False,
-        'reasons': []
-    }
-    
-    # 檢查 5m 趨勢
-    if len(df_5m) >= 20:
-        breakout_5m = check_trend_breakout(
-            df_5m,
-            lookback=20,
-            ma_length=20,
-            compare_bars=5,
-            slope_threshold=0.1
-        )
-        
-        if breakout_5m['long_signal']:
-            result['trend_long'] = True
-            result['reasons'].extend([f"5m: {r}" for r in breakout_5m['long_reasons']])
-        
-        if breakout_5m['short_signal']:
-            result['trend_short'] = True
-            result['reasons'].extend([f"5m: {r}" for r in breakout_5m['short_reasons']])
-    
-    return result
