@@ -41,6 +41,7 @@ class ShioajiClient:
         if not all([api_key, secret_key]): return False
         try:
             self.api.login(api_key=api_key, secret_key=secret_key, fetch_contract=True)
+            self.api.set_default_index(1)  # 預設期貨帳戶
             if cert_path and os.path.exists(cert_path):
                 self.api.activate_ca(ca_path=cert_path, ca_passwd=cert_password, person_id=api_key)
             self.is_logged_in = True
@@ -178,14 +179,35 @@ class ShioajiClient:
             order = self.api.Order(
                 action=action_value, price=price, quantity=quantity,
                 order_type=sj.constant.OrderType.MTL,
-                price_type=sj.constant.StockPriceType.MKT if price == 0 else sj.constant.StockPriceType.LMT,
-                market_type=sj.constant.FuturesMarketType.Night if datetime.now().hour >= 15 or datetime.now().hour < 5 else sj.constant.FuturesMarketType.Common
+                price_type=sj.constant.FuturesPriceType.MKT if price == 0 else sj.constant.FuturesPriceType.LMT,
+                market_type=sj.constant.FuturesMarketType.Night if datetime.now().hour >= 15 or datetime.now().hour < 5 else sj.constant.FuturesMarketType.Common,
+                account=self.api.futopt_account,
             )
             trade = self.api.place_order(contract, order)
             return trade
         except Exception as e:
             logger.error(f"Order placement failed: {e}")
             return None
+
+    def update_order(self, trade, price: float, quantity: int = 1):
+        """改單（移動停損用，不刪單重下以保留排隊順位）"""
+        if not self.is_logged_in: return False
+        try:
+            self.api.update_order(trade, price=price, qty=quantity)
+            return True
+        except Exception as e:
+            logger.error(f"Update order failed: {e}")
+            return False
+
+    def cancel_order(self, trade):
+        """撤單（停利成交後撤銷場上停損單）"""
+        if not self.is_logged_in: return False
+        try:
+            self.api.cancel_order(trade)
+            return True
+        except Exception as e:
+            logger.error(f"Cancel order failed: {e}")
+            return False
 
     def logout(self):
         """登出並取消所有訂閱"""
