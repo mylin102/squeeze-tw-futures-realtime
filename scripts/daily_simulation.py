@@ -496,11 +496,27 @@ def run_simulation(ticker="TMF"):
                     can_long = (last_15m['Close'] > last_15m['ema_filter'] * 0.999) or last_5m['opening_bullish']
                     can_short = (last_15m['Close'] < last_15m['ema_filter'] * 1.001) or last_5m['opening_bearish']
 
-                if (sqz_buy or pb_buy) and can_long and MGMT["allow_long"]:
+                # 【趨勢突破確認】
+                trend_signal = check_trend_breakout_signal(df_5m, df_15m)
+                
+                # 進場邏輯：Squeeze 信號 + 趨勢突破確認
+                # 多頭：Squeeze 多頭 OR 趨勢突破多頭
+                long_confirmed = (sqz_buy or pb_buy) and can_long
+                trend_long_confirmed = trend_signal['trend_long']
+                
+                # 空頭：Squeeze 空頭 OR 趨勢突破空頭
+                short_confirmed = (sqz_sell or pb_sell) and can_short
+                trend_short_confirmed = trend_signal['trend_short']
+                
+                if (long_confirmed or trend_long_confirmed) and MGMT["allow_long"]:
                     if not live_ready or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
+                        if trend_long_confirmed:
+                            console.print(f"[dim]📈 Trend Breakout LONG: {', '.join(trend_signal['reasons'])}[/dim]")
                         execute_trade("BUY", last_price, timestamp, MGMT["lots_per_trade"], stop_loss=stop_loss_pts, break_even_trigger=RISK["break_even_pts"])
-                elif (sqz_sell or pb_sell) and can_short and MGMT["allow_short"]:
+                elif (short_confirmed or trend_short_confirmed) and MGMT["allow_short"]:
                     if not live_ready or check_funds_for_live(shioaji, MGMT["lots_per_trade"]):
+                        if trend_short_confirmed:
+                            console.print(f"[dim]📉 Trend Breakout SHORT: {', '.join(trend_signal['reasons'])}[/dim]")
                         execute_trade("SELL", last_price, timestamp, MGMT["lots_per_trade"], stop_loss=stop_loss_pts, break_even_trigger=RISK["break_even_pts"])
 
             time.sleep(POLL_INTERVAL)
@@ -510,3 +526,49 @@ def run_simulation(ticker="TMF"):
 
 if __name__ == "__main__":
     run_simulation("TMF")
+
+
+# ========== 趨勢突破策略整合 ==========
+
+def check_trend_breakout_signal(df_5m: pd.DataFrame, df_15m: pd.DataFrame) -> dict:
+    """
+    檢查趨勢突破信號 (與 Squeeze 結合)
+    
+    進場條件：
+    多頭：
+    - 價格 > 多頭趨勢線
+    - MA20 斜率 > 0.1%
+    - Squeeze 信號符合
+    
+    空頭：
+    - 價格 < 空頭趨勢線
+    - MA20 斜率 < -0.1%
+    - Squeeze 信號符合
+    """
+    from src.squeeze_futures.engine.trend_breakout import check_trend_breakout
+    
+    result = {
+        'trend_long': False,
+        'trend_short': False,
+        'reasons': []
+    }
+    
+    # 檢查 5m 趨勢
+    if len(df_5m) >= 20:
+        breakout_5m = check_trend_breakout(
+            df_5m,
+            lookback=20,
+            ma_length=20,
+            compare_bars=5,
+            slope_threshold=0.1
+        )
+        
+        if breakout_5m['long_signal']:
+            result['trend_long'] = True
+            result['reasons'].extend([f"5m: {r}" for r in breakout_5m['long_reasons']])
+        
+        if breakout_5m['short_signal']:
+            result['trend_short'] = True
+            result['reasons'].extend([f"5m: {r}" for r in breakout_5m['short_reasons']])
+    
+    return result

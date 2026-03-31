@@ -85,7 +85,14 @@
       "Bash(print)",
       "Bash(break)",
       "Bash(f.writelines)",
-      "Bash(pyeof)"
+      "Bash(pyeof)",
+      "Bash(content *)",
+      "Bash(old_entry *)",
+      "Bash(new_entry *)",
+      "Bash(old_entry, *)",
+      "Bash(f.write)",
+      "Bash(old_exit *)",
+      "Bash(new_exit *)"
     ]
   },
   "$version": 3
