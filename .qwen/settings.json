@@ -325,7 +325,9 @@
       "Bash(old_time_check *)",
       "Bash(new_time_check *)",
       "Bash(old_main_check *)",
-      "Bash(new_main_check *)"
+      "Bash(new_main_check *)",
+      "Bash(old_header *)",
+      "Bash(new_header *)"
     ]
   },
   "$version": 3

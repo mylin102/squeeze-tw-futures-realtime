@@ -21,7 +21,22 @@ from squeeze_futures.data.shioaji_client import ShioajiClient
 from squeeze_futures.data.tsm_client import download_tsm_data, calculate_tsm_indicators, get_tsm_signal, print_tsm_report
 from squeeze_futures.engine.constants import get_point_value
 from squeeze_futures.engine.simulator import PaperTrader
-from scripts.trailing_stop import update_trailing_stop, reset_trailing_stop, STOP_LOSS_PTS, TAKE_PROFIT_PTS
+# 移動停損模組 (包含冷卻時間機制)
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from trailing_stop import (
+    update_trailing_stop, 
+    reset_trailing_stop, 
+    should_update_stop,
+    get_trailing_stop_status,
+    STOP_LOSS_PTS, 
+    TAKE_PROFIT_PTS,
+    UPDATE_COOLDOWN,
+    LAST_UPDATE_TIME
+)
+
+print(f"[dim]移動停損冷卻時間：{UPDATE_COOLDOWN} 秒[/dim]")
 from squeeze_futures.engine.indicators import calculate_futures_squeeze, calculate_mtf_alignment, calculate_atr
 from squeeze_futures.report.notifier import send_email_notification
 
