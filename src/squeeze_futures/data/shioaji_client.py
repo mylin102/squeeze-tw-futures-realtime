@@ -41,7 +41,6 @@ class ShioajiClient:
         if not all([api_key, secret_key]): return False
         try:
             self.api.login(api_key=api_key, secret_key=secret_key, fetch_contract=True)
-            self.api.set_default_index(1)  # 預設期貨帳戶
             if cert_path and os.path.exists(cert_path):
                 self.api.activate_ca(ca_path=cert_path, ca_passwd=cert_password, person_id=api_key)
             self.is_logged_in = True
