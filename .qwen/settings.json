@@ -92,7 +92,14 @@
       "Bash(old_entry, *)",
       "Bash(f.write)",
       "Bash(old_exit *)",
-      "Bash(new_exit *)"
+      "Bash(new_exit *)",
+      "Bash(match *)",
+      "Bash(r'\\n\\n# ========= 趨勢突破策略整合 ==========.*?return result\\n', *)",
+      "Bash(trend_func *)",
+      "Bash(0)",
+      "Bash(insert_pos *)",
+      "Bash('def load_config():')",
+      "Bash(else:)"
     ]
   },
   "$version": 3

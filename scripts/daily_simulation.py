@@ -18,6 +18,28 @@ from squeeze_futures.report.notifier import send_email_notification
 
 console = Console()
 
+
+
+# ========== 趨勢突破策略整合 ==========
+
+def check_trend_breakout_signal(df_5m: pd.DataFrame, df_15m: pd.DataFrame) -> dict:
+    from src.squeeze_futures.engine.trend_breakout import check_trend_breakout
+    
+    result = {'trend_long': False, 'trend_short': False, 'reasons': []}
+    
+    if len(df_5m) >= 20:
+        breakout_5m = check_trend_breakout(df_5m, lookback=20, ma_length=20, compare_bars=5, slope_threshold=0.1)
+        
+        if breakout_5m['long_signal']:
+            result['trend_long'] = True
+            result['reasons'].extend([f"5m: {r}" for r in breakout_5m['long_reasons']])
+        
+        if breakout_5m['short_signal']:
+            result['trend_short'] = True
+            result['reasons'].extend([f"5m: {r}" for r in breakout_5m['short_reasons']])
+    
+    return result
+
 def load_config():
     config_path = os.path.join(os.path.dirname(__file__), "..", "config", "trade_config.yaml")
     with open(config_path, 'r', encoding='utf-8') as f: return yaml.safe_load(f)
