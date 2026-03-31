@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Vectorized backtest using TWII 5m data + Squeeze strategy.
-Mimics vectorbt-style: signal arrays → portfolio simulation → stats.
+Vectorized backtest — merges all accumulated TMF kbars snapshots.
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -12,6 +11,7 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 from squeeze_futures.engine.indicators import calculate_futures_squeeze
+from kbars_loader import load_all_kbars
 
 console = Console()
 
@@ -23,19 +23,14 @@ ENTRY_SCORE  = cfg["strategy"]["entry_score"]
 SL_PTS       = cfg["risk_mgmt"]["stop_loss_pts"]
 TP1_PTS      = cfg["strategy"]["partial_exit"]["tp1_pts"]
 BE_PTS       = cfg["risk_mgmt"]["break_even_pts"]
-LOTS         = cfg["trade_mgmt"]["lots_per_trade"]       # 2
-TP1_LOTS     = cfg["strategy"]["partial_exit"]["tp1_lots"]  # 1
-POINT_VALUE  = 10   # TWD per point (TWII proxy; TMF = 10)
-FEE          = cfg["execution"]["broker_fee_per_side"] * 2  # round-trip per lot
+LOTS         = cfg["trade_mgmt"]["lots_per_trade"]
+TP1_LOTS     = cfg["strategy"]["partial_exit"]["tp1_lots"]
+POINT_VALUE  = 10
+FEE          = cfg["execution"]["broker_fee_per_side"] * 2
 TAX_RATE     = cfg["execution"]["tax_rate"]
 FILTER_MODE  = cfg["strategy"]["regime_filter"]
 
-# ── Load data ─────────────────────────────────────────────────────────────────
-df_raw = pd.read_csv(
-    os.path.join(os.path.dirname(__file__), "..", "..", "data", "taifex_raw", "TWII_5m_60d.csv"),
-    parse_dates=["Datetime"], index_col="Datetime"
-)[["Open","High","Low","Close","Volume"]].dropna()
-df_raw.index = df_raw.index.tz_localize(None) if df_raw.index.tzinfo else df_raw.index
+df_raw = load_all_kbars()
 
 # ── Indicators ────────────────────────────────────────────────────────────────
 df = calculate_futures_squeeze(df_raw, bb_length=cfg["strategy"]["length"])
