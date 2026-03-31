@@ -28,7 +28,8 @@
       "Bash(echo *)",
       "Bash(chmod *)",
       "Bash(tee *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(crontab *)"
     ]
   },
   "$version": 3

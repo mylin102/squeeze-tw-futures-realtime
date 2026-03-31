@@ -28,6 +28,16 @@ from squeeze_futures.report.notifier import send_email_notification
 console = Console()
 
 
+def get_market_status():
+    """獲取市場狀態"""
+    now = datetime.now()
+    weekday, current_time = now.weekday(), now.hour * 100 + now.minute
+    is_day = (0 <= weekday <= 4) and (845 <= current_time < 1345)
+    is_night = ((0 <= weekday <= 4) and (current_time >= 1500)) or ((1 <= weekday <= 5) and (current_time < 500))
+    is_near_close = (is_day and current_time >= 1340) or (is_night and current_time >= 455)
+    return {"open": is_day or is_night, "near_close": is_near_close}
+
+
 def load_config():
     config_path = os.path.join(os.path.dirname(__file__), "..", "config", "trade_config.yaml")
     with open(config_path, 'r', encoding='utf-8') as f:
