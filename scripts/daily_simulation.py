@@ -457,7 +457,20 @@ def run_simulation(ticker="TMF"):
             processed_data = {}
             for tf in ["5m", "15m", "1h"]:
                 df = shioaji.get_kline(ticker, interval=tf)
-                if df.empty: df = download_futures_data("^TWII", interval=tf, period="5d")
+                if df.empty:
+                    # fallback: 用最新的 taifex CSV（不用 yfinance，避免網路問題）
+                    import glob as _glob
+                    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    candidates = sorted(_glob.glob(os.path.join(base, "data", "taifex_raw", "TMF_5m_*.csv")))
+                    for c in reversed(candidates):
+                        try:
+                            _df = pd.read_csv(c, index_col=0, parse_dates=True)
+                            _df.columns = [col.capitalize() for col in _df.columns]
+                            _df = _df[["Open","High","Low","Close","Volume"]].dropna()
+                            if not _df.empty and _df["Close"].median() > 20000:
+                                df = _df; break
+                        except Exception:
+                            pass
                 if not df.empty:
                     processed_data[tf] = calculate_futures_squeeze(df, bb_length=STRATEGY["length"], **PB_ARGS)
 
