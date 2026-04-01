@@ -134,18 +134,17 @@ def run_simulation(ticker="TMF"):
     
     # ── 啟動時即時抓取並存檔 kbars ──────────────────────────────────────────
     def _snapshot_kbars(tf: str = "5m"):
-        """抓取當前 kbars 並存為 CSV 供回測使用"""
+        """抓取當前 kbars 並存為 CSV 供回測使用（只存 TMF 期貨資料）"""
         df = shioaji.get_kline(ticker, interval=tf)
-        if df.empty:
-            df = download_futures_data("^TWII", interval=tf, period="60d")
-        if df.empty:
+        if df.empty or df["Close"].median() < 20000:
+            # Shioaji 未取得資料或非期貨價格，跳過存檔
             return
         out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "taifex_raw")
         os.makedirs(out_dir, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = os.path.join(out_dir, f"{ticker}_{tf}_{ts}.csv")
         df.to_csv(path)
-        console.print(f"[dim]📦 kbars snapshot saved: {path} ({len(df)} bars)[/dim]")
+        console.print(f"[dim]📦 kbars snapshot saved: {path} ({len(df)} bars, Close {df['Close'].min():.0f}~{df['Close'].max():.0f})[/dim]")
 
     _snapshot_kbars("5m")
     # ────────────────────────────────────────────────────────────────────────
